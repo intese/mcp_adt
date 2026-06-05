@@ -18,6 +18,10 @@ export class SessionManager {
     return this._type;
   }
 
+  setType(type: SessionType): void {
+    this._type = type;
+  }
+
   get csrfToken(): string {
     return this._csrfToken ?? FETCH_TOKEN;
   }

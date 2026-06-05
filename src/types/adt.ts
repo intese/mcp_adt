@@ -82,6 +82,7 @@ export interface AdtClassSource {
 
 export interface AdtLockResult {
   lockHandle: string;
+  corrNr?: string;
   lockTime?: string;
   lockedBy?: string;
   objectUri: string;

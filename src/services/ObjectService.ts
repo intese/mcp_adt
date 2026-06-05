@@ -91,7 +91,12 @@ export class ObjectService {
     include = "main",
   ): Promise<void> {
     validateAdtUri(objectUri);
-    let uri = `${sourceUri(objectUri, include)}?lockHandle=${encodeURIComponent(lockHandle)}`;
+    // For ABAP programs, source writes go to the include URI, not the program URI
+    const writeUri = objectUri.includes("/programs/programs/")
+      ? objectUri.replace("/programs/programs/", "/programs/includes/")
+      : objectUri;
+
+    let uri = `${sourceUri(writeUri, include)}?lockHandle=${encodeURIComponent(lockHandle)}`;
     if (transportNumber) uri = `${uri}&corrNr=${encodeURIComponent(transportNumber)}`;
 
     logger.debug("Setting object source", { uri: objectUri, include });

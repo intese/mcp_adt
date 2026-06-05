@@ -36,7 +36,7 @@ export class AdtHttpClient {
 
   constructor(config: AdtClientConfig) {
     this.config = config;
-    this.session = new SessionManager("stateful");
+    this.session = new SessionManager("stateless");
 
     const httpsAgent = this.buildHttpsAgent(config);
 
@@ -58,8 +58,8 @@ export class AdtHttpClient {
 
     this.loginPromise = (async () => {
       logger.info("Logging in to SAP ADT", { url: this.config.baseUrl });
-      // Discovery endpoint triggers authentication and returns CSRF token
-      const response = await this.rawGet("/sap/bc/adt/discovery", {
+      // compatibility/graph triggers authentication and CSRF token fetch
+      const response = await this.rawGet("/sap/bc/adt/compatibility/graph", {
         headers: { "x-csrf-token": "fetch" },
       });
 
@@ -141,6 +141,10 @@ export class AdtHttpClient {
 
   getSessionInfo(): SessionInfo {
     return this.session.getInfo();
+  }
+
+  setSessionType(type: "stateful" | "stateless"): void {
+    this.session.setType(type);
   }
 
   /** Create independent clone sharing credentials but not session state */
@@ -261,6 +265,7 @@ export class AdtHttpClient {
       "sap-client": this.config.client,
       "Accept-Language": this.config.language,
       "User-Agent": "ABAP Development Tools",
+      "X-sap-adt-sessiontype": this.session.type,
     };
 
     if (options.withCsrf) {

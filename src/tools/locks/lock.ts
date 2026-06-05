@@ -20,10 +20,12 @@ export const lockObjectTool: ToolDefinition<typeof schema> = {
       const lockResult = await services.lockService.acquireLock(args.objectUri);
       return successResult({
         lockHandle: lockResult.lockHandle,
+        corrNr: lockResult.corrNr,
         lockedBy: lockResult.lockedBy,
         lockTime: lockResult.lockTime,
         objectUri: lockResult.objectUri,
-        reminder: "Call adt_unlock_object when done to release the lock.",
+        reminder:
+          "Use lockHandle for adt_write_object. corrNr is the transport number (if not known). Call adt_unlock_object when done.",
       });
     } catch (err) {
       return errorResult(err, "adt_lock_object");

@@ -18,7 +18,7 @@ export class SyntaxService {
       {
         headers: {
           "Content-Type": "application/vnd.sap.adt.checkobjects+xml",
-          Accept: "application/vnd.sap.adt.checkrun.result+xml",
+          Accept: "application/vnd.sap.adt.checkmessages+xml",
         },
       },
     );
@@ -40,7 +40,7 @@ export class SyntaxService {
       {
         headers: {
           "Content-Type": "application/vnd.sap.adt.checkrun.request+xml",
-          Accept: "application/vnd.sap.adt.checkrun.result+xml",
+          Accept: "application/vnd.sap.adt.checkmessages+xml",
         },
       },
     );
@@ -90,23 +90,30 @@ export class SyntaxService {
   }
 
   private extractFindings(parsed: Record<string, unknown>): SyntaxCheckFinding[] {
+    // SAP returns: <chkrun:checkRunReports><chkrun:checkReport><chkrun:findings><chkrun:finding .../>
     // Try multiple possible XML paths for findings
     const findingNodes = ensureArray(
       getNestedValue(parsed, [
-        "checkRun:checkResultList",
-        "checkRun:checkResult",
-        "checkRun:findings",
-        "checkRun:finding",
+        "chkrun:checkRunReports",
+        "chkrun:checkReport",
+        "chkrun:findings",
+        "chkrun:finding",
       ]) as unknown ??
+        getNestedValue(parsed, [
+          "checkRun:checkResultList",
+          "checkRun:checkResult",
+          "checkRun:findings",
+          "checkRun:finding",
+        ]) as unknown ??
         getNestedValue(parsed, ["checkResultList", "checkResult", "findings", "finding"]) as unknown,
     );
 
     return findingNodes.map((node) => ({
-      severity: (attr(node, "checkRun:type") || attr(node, "type") || "I") as SyntaxCheckFinding["severity"],
-      line: parseInt(attr(node, "checkRun:line") || attr(node, "line") || "0", 10),
-      column: parseInt(attr(node, "checkRun:column") || attr(node, "column") || "0", 10),
-      message: attr(node, "checkRun:text") || attr(node, "text") || extractText(node),
-      uri: attr(node, "checkRun:uri") || attr(node, "uri") || undefined,
+      severity: (attr(node, "chkrun:type") || attr(node, "checkRun:type") || attr(node, "type") || "I") as SyntaxCheckFinding["severity"],
+      line: parseInt(attr(node, "chkrun:line") || attr(node, "checkRun:line") || attr(node, "line") || "0", 10),
+      column: parseInt(attr(node, "chkrun:column") || attr(node, "checkRun:column") || attr(node, "column") || "0", 10),
+      message: attr(node, "chkrun:text") || attr(node, "checkRun:text") || attr(node, "text") || extractText(node),
+      uri: attr(node, "chkrun:uri") || attr(node, "checkRun:uri") || attr(node, "uri") || undefined,
     }));
   }
 

@@ -2,42 +2,79 @@ import type { AdtHttpClient } from "../adt/client.js";
 import type { AdtLockResult, AdtLockInfo } from "../types/index.js";
 import { parseXml, attr, extractText, getNestedValue } from "../utils/xml.js";
 import { logger } from "../utils/logger.js";
-import { lockUri, unlockUri, validateAdtUri } from "../utils/uri.js";
+import { validateAdtUri } from "../utils/uri.js";
 import { AdtLockError } from "../adt/errors.js";
+
+// SAP ADT lock mechanism:
+// - Lock:   POST {objectUri}?_action=LOCK&accessMode=MODIFY  (stateful session)
+// - Unlock: POST {objectUri}?_action=UNLOCK&lockHandle={handle}  (stateless session)
+// - Source write: PUT {sourceUri}?lockHandle={handle}&corrNr={transport}  (stateful session)
+//
+// For ABAP programs, the lock must target the INCLUDE URI (/programs/includes/{name}),
+// not the program URI (/programs/programs/{name}).
+
+function includeUriForProgram(objectUri: string): string {
+  return objectUri.replace("/programs/programs/", "/programs/includes/");
+}
 
 export class LockService {
   constructor(private readonly client: AdtHttpClient) {}
 
   async acquireLock(objectUri: string): Promise<AdtLockResult> {
     validateAdtUri(objectUri);
-    logger.debug("Acquiring lock", { uri: objectUri });
+    const lockUri = includeUriForProgram(objectUri);
+    logger.debug("Acquiring lock", { uri: lockUri });
 
-    const uri = `${lockUri(objectUri)}?_action=LOCK&accessMode=MODIFY`;
-    const xml = await this.client.post<string>(uri, "", {
-      headers: {
-        Accept: "application/vnd.sap.adt.lock+xml",
-        "Content-Length": "0",
-      },
-    });
+    this.client.setSessionType("stateful");
+    try {
+      const xml = await this.client.post<string>(
+        `${lockUri}?_action=LOCK&accessMode=MODIFY`,
+        "",
+        {
+          headers: {
+            Accept:
+              "application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result",
+            "Content-Length": "0",
+          },
+        },
+      );
 
-    const result = this.parseLockResponse(xml, objectUri);
-    logger.info("Lock acquired", { uri: objectUri, handle: result.lockHandle.slice(0, 8) + "..." });
-    return result;
+      const result = this.parseLockResponse(xml, objectUri);
+      logger.info("Lock acquired", {
+        uri: lockUri,
+        handle: result.lockHandle.slice(0, 8) + "...",
+        transport: result.corrNr,
+      });
+      return result;
+    } catch (err) {
+      this.client.setSessionType("stateless");
+      throw err;
+    }
   }
 
   async releaseLock(objectUri: string, lockHandle: string): Promise<void> {
     validateAdtUri(objectUri);
-    logger.debug("Releasing lock", { uri: objectUri });
+    const lockUri = includeUriForProgram(objectUri);
+    logger.debug("Releasing lock", { uri: lockUri });
 
-    const uri = unlockUri(objectUri, lockHandle);
-    await this.client.delete<string>(uri);
-    logger.info("Lock released", { uri: objectUri });
+    // Keep stateful session during unlock so SAP routes to the same server holding the ENQUEUE lock
+    try {
+      await this.client.post<string>(
+        `${lockUri}?_action=UNLOCK&lockHandle=${encodeURIComponent(lockHandle)}`,
+        "",
+        { headers: { "Content-Length": "0" } },
+      );
+    } finally {
+      this.client.setSessionType("stateless");
+    }
+    logger.info("Lock released", { uri: lockUri });
   }
 
   async getLockInfo(objectUri: string): Promise<AdtLockInfo> {
     validateAdtUri(objectUri);
+    const realUri = includeUriForProgram(objectUri);
 
-    const xml = await this.client.get<string>(objectUri, {
+    const xml = await this.client.get<string>(realUri, {
       headers: { Accept: "application/vnd.sap.adt.core.objectstructure+xml" },
     });
 
@@ -47,24 +84,22 @@ export class LockService {
   private parseLockResponse(xml: string, objectUri: string): AdtLockResult {
     try {
       const parsed = parseXml(xml);
-      const lock =
-        (getNestedValue(parsed, ["adtlock:lock"]) as Record<string, unknown>) ??
-        (getNestedValue(parsed, ["lock"]) as Record<string, unknown>);
 
-      if (!lock) throw new AdtLockError("Invalid lock response from SAP", { xml: xml.slice(0, 200) });
+      // SAP returns: <asx:abap><asx:values><DATA><LOCK_HANDLE>...</LOCK_HANDLE><CORRNR>...</CORRNR></DATA></asx:values></asx:abap>
+      const data =
+        (getNestedValue(parsed, ["asx:abap", "asx:values", "DATA"]) as Record<string, unknown>) ??
+        (getNestedValue(parsed, ["abap", "values", "DATA"]) as Record<string, unknown>);
 
-      const handleNode =
-        lock["adtlock:lockHandle"] ?? lock["lockHandle"] ?? lock["LOCK_HANDLE"];
-      const handle = extractText(handleNode) || attr(lock, "adtlock:lockHandle");
+      if (!data) throw new AdtLockError("Invalid lock response from SAP", { xml: xml.slice(0, 200) });
 
-      if (!handle) {
-        throw new AdtLockError("No lock handle in SAP response", { xml: xml.slice(0, 200) });
-      }
+      const handle = extractText(data["LOCK_HANDLE"]);
+      if (!handle) throw new AdtLockError("No lock handle in SAP response", { xml: xml.slice(0, 200) });
 
       return {
         lockHandle: handle,
-        lockTime: extractText(lock["adtlock:lockTime"] ?? lock["lockTime"]),
-        lockedBy: extractText(lock["adtlock:lockedBy"] ?? lock["lockedBy"]),
+        corrNr: extractText(data["CORRNR"]) ?? undefined,
+        lockTime: undefined,
+        lockedBy: extractText(data["CORRUSER"]) ?? undefined,
         objectUri,
       };
     } catch (err) {
