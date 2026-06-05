@@ -62,6 +62,23 @@ export class AdtHttpClient {
       const response = await this.rawGet("/sap/bc/adt/discovery", {
         headers: { "x-csrf-token": "fetch" },
       });
+
+      if (response.status === 401) {
+        throw new AdtAuthenticationError(
+          "Login failed: invalid credentials or user locked (HTTP 401)",
+        );
+      }
+      if (response.status === 403) {
+        throw new AdtAuthenticationError(
+          "Login failed: access denied (HTTP 403)",
+        );
+      }
+      if (response.status >= 400) {
+        throw new AdtAuthenticationError(
+          `Login failed: unexpected HTTP ${response.status}`,
+        );
+      }
+
       this.session.updateFromResponseHeaders(response.headers as Record<string, string>);
       this.session.markAuthenticated();
 
