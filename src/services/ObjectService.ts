@@ -124,7 +124,7 @@ export class ObjectService {
 
   async createClass(options: CreateClassOptions): Promise<AdtObjectReference> {
     const uri = withCorrNr(
-      `/sap/bc/adt/classes?packageName=${encodeURIComponent(options.packageName)}`,
+      `/sap/bc/adt/oo/classes?packageName=${encodeURIComponent(options.packageName)}`,
       options.transportNumber,
     );
     const body = this.buildClassXml(options);
@@ -141,7 +141,7 @@ export class ObjectService {
 
   async createInterface(options: CreateInterfaceOptions): Promise<AdtObjectReference> {
     const uri = withCorrNr(
-      `/sap/bc/adt/interfaces?packageName=${encodeURIComponent(options.packageName)}`,
+      `/sap/bc/adt/oo/interfaces?packageName=${encodeURIComponent(options.packageName)}`,
       options.transportNumber,
     );
     const body = this.buildInterfaceXml(options);

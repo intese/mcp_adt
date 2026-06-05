@@ -3,11 +3,11 @@
 const ADT_BASE = "/sap/bc/adt";
 
 export function classUri(name: string): string {
-  return `${ADT_BASE}/classes/classes/${encodeURIComponent(name.toUpperCase())}`;
+  return `${ADT_BASE}/oo/classes/${encodeURIComponent(name.toUpperCase())}`;
 }
 
 export function interfaceUri(name: string): string {
-  return `${ADT_BASE}/interfaces/interfaces/${encodeURIComponent(name.toUpperCase())}`;
+  return `${ADT_BASE}/oo/interfaces/${encodeURIComponent(name.toUpperCase())}`;
 }
 
 export function reportUri(name: string): string {

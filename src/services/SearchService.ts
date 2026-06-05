@@ -23,8 +23,7 @@ export class SearchService {
       {
         params,
         headers: {
-          Accept:
-            "application/vnd.sap.adt.repository.informationsystem.searchresults+xml",
+          Accept: "application/xml",
         },
       },
     );

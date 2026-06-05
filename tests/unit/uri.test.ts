@@ -16,27 +16,27 @@ describe("URI utilities", () => {
   describe("classUri", () => {
     it("builds class URI", () => {
       expect(classUri("ZCL_MY_CLASS")).toBe(
-        "/sap/bc/adt/classes/classes/ZCL_MY_CLASS",
+        "/sap/bc/adt/oo/classes/ZCL_MY_CLASS",
       );
     });
 
     it("uppercases the name", () => {
       expect(classUri("zcl_my_class")).toBe(
-        "/sap/bc/adt/classes/classes/ZCL_MY_CLASS",
+        "/sap/bc/adt/oo/classes/ZCL_MY_CLASS",
       );
     });
   });
 
   describe("sourceUri", () => {
     it("builds source URI with default include", () => {
-      expect(sourceUri("/sap/bc/adt/classes/classes/ZCL_TEST")).toBe(
-        "/sap/bc/adt/classes/classes/ZCL_TEST/source/main",
+      expect(sourceUri("/sap/bc/adt/oo/classes/ZCL_TEST")).toBe(
+        "/sap/bc/adt/oo/classes/ZCL_TEST/source/main",
       );
     });
 
     it("builds source URI with specific include", () => {
-      expect(sourceUri("/sap/bc/adt/classes/classes/ZCL_TEST", "definitions")).toBe(
-        "/sap/bc/adt/classes/classes/ZCL_TEST/source/definitions",
+      expect(sourceUri("/sap/bc/adt/oo/classes/ZCL_TEST", "definitions")).toBe(
+        "/sap/bc/adt/oo/classes/ZCL_TEST/source/definitions",
       );
     });
   });
@@ -44,7 +44,7 @@ describe("URI utilities", () => {
   describe("validateAdtUri", () => {
     it("accepts valid ADT URIs", () => {
       expect(() =>
-        validateAdtUri("/sap/bc/adt/classes/classes/ZCL_TEST"),
+        validateAdtUri("/sap/bc/adt/oo/classes/ZCL_TEST"),
       ).not.toThrow();
     });
 
@@ -72,7 +72,7 @@ describe("URI utilities", () => {
   describe("extractObjectNameFromUri", () => {
     it("extracts name from URI", () => {
       expect(
-        extractObjectNameFromUri("/sap/bc/adt/classes/classes/ZCL_TEST"),
+        extractObjectNameFromUri("/sap/bc/adt/oo/classes/ZCL_TEST"),
       ).toBe("ZCL_TEST");
     });
   });
