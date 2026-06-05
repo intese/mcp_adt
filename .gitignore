@@ -1,0 +1,32 @@
+# Credentials & secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+*.swp
+*.swo
+
+# Claude Code project memory — local only
+CLAUDE.md
+.claude/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+dist-test/
+
+# Test coverage
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.iml
