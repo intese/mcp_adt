@@ -260,6 +260,7 @@ export class AdtHttpClient {
     const headers: AxiosHeaders = {
       "sap-client": this.config.client,
       "Accept-Language": this.config.language,
+      "User-Agent": "ABAP Development Tools",
     };
 
     if (options.withCsrf) {
