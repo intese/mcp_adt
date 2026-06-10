@@ -8,9 +8,9 @@ const schema = z.object({
     "ADT URI of the object, e.g. /sap/bc/adt/classes/classes/ZMY_CLASS",
   ),
   include: z
-    .enum(["main", "definitions", "implementations", "macros", "test"])
+    .enum(["main", "definitions", "implementations", "macros", "test", "testclasses"])
     .default("main")
-    .describe("Source include to read (relevant for classes)"),
+    .describe("Source include to read (relevant for classes; 'test' and 'testclasses' are equivalent)"),
   readMetadata: z
     .boolean()
     .default(false)

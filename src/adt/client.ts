@@ -336,7 +336,9 @@ export class AdtHttpClient {
   }
 
   private async ping(): Promise<void> {
-    await this.rawGet("/sap/bc/adt/discovery");
+    await this.rawGet("/sap/bc/adt/discovery", {
+      headers: { Accept: "application/atomsvc+xml" },
+    });
     logger.debug("Session keepalive ping sent");
   }
 }

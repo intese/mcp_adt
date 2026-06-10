@@ -9,16 +9,24 @@ import {
   MOCK_SYNTAX_CHECK_ERROR_XML,
   MOCK_UNIT_TEST_RESULT_XML,
   MOCK_UNIT_TEST_FAILURE_XML,
+  MOCK_UNIT_TEST_EMPTY_XML,
 } from "../mocks/adtResponses.js";
 import type { AdtHttpClient } from "../../src/adt/client.js";
 
-function createMockClient(responses: Record<string, string>): AdtHttpClient {
+function createMockClient(
+  responses: Record<string, string>,
+  postSequence?: string[],
+): AdtHttpClient {
+  let postCallCount = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mock: Record<string, any> = {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     get: jest.fn().mockImplementation(async () => ""),
     post: jest.fn().mockImplementation(async (path: unknown) => {
       const p = String(path);
+      if (postSequence && p.includes("testruns")) {
+        const idx = postCallCount++;
+        return postSequence[idx] ?? "";
+      }
       for (const [key, val] of Object.entries(responses)) {
         if (p.includes(key)) return val;
       }
@@ -30,7 +38,13 @@ function createMockClient(responses: Record<string, string>): AdtHttpClient {
     delete: jest.fn().mockImplementation(async () => ""),
     login: jest.fn().mockImplementation(async () => undefined),
     logout: jest.fn().mockImplementation(async () => undefined),
-    getSessionInfo: jest.fn().mockReturnValue({ isAuthenticated: true }),
+    getSessionInfo: jest.fn().mockReturnValue({
+      isAuthenticated: true,
+      csrfToken: "test-csrf-token",
+      cookies: { SAP_SESSIONID_XXX: "abc123" },
+      type: "stateless",
+      loginTime: new Date(),
+    }),
     createStatelessClone: jest.fn(),
   };
   return mock as unknown as AdtHttpClient;
@@ -103,7 +117,7 @@ describe("SyntaxService", () => {
 
 describe("UnitTestService", () => {
   it("returns passed status for all-passing tests", async () => {
-    const client = createMockClient({ unittest: MOCK_UNIT_TEST_RESULT_XML });
+    const client = createMockClient({ testruns: MOCK_UNIT_TEST_RESULT_XML });
     const service = new UnitTestService(client);
 
     const result = await service.runTests({
@@ -117,7 +131,7 @@ describe("UnitTestService", () => {
   });
 
   it("returns failed status for failed tests", async () => {
-    const client = createMockClient({ unittest: MOCK_UNIT_TEST_FAILURE_XML });
+    const client = createMockClient({ testruns: MOCK_UNIT_TEST_FAILURE_XML });
     const service = new UnitTestService(client);
 
     const result = await service.runTests({
@@ -130,5 +144,37 @@ describe("UnitTestService", () => {
     const alert = result.programs[0]?.testClasses[0]?.methods[0]?.alerts[0];
     expect(alert?.kind).toBe("assertion");
     expect(alert?.severity).toBe("critical");
+  });
+
+  it("returns no_tests_selected for empty runResult and includes diagnosticNote", async () => {
+    const client = createMockClient({ testruns: MOCK_UNIT_TEST_EMPTY_XML });
+    const service = new UnitTestService(client);
+
+    const result = await service.runTests({
+      objectUri: "/sap/bc/adt/classes/classes/ZCL_TEST",
+      objectName: "ZCL_TEST",
+    });
+
+    expect(result.status).toBe("no_tests_selected");
+    expect(result.programs).toHaveLength(0);
+    expect(result.summary.total).toBe(0);
+    expect(result.summary.diagnosticNote).toContain("empty aunit:runResult");
+  });
+
+  it("falls back to vit-class strategy when oo-class returns empty result", async () => {
+    // First POST (oo-class) → empty, second POST (vit-class) → real result
+    const client = createMockClient({}, [MOCK_UNIT_TEST_EMPTY_XML, MOCK_UNIT_TEST_RESULT_XML]);
+    const service = new UnitTestService(client);
+
+    const result = await service.runTests({
+      objectUri: "/sap/bc/adt/oo/classes/zcl_test",
+      objectName: "ZCL_TEST",
+    });
+
+    expect(result.status).toBe("passed");
+    expect(result.summary.passed).toBe(1);
+    // post should have been called twice (once per strategy)
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    expect(mockPost).toHaveBeenCalledTimes(2);
   });
 });

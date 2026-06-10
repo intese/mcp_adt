@@ -13,7 +13,8 @@ export type AdtErrorCode =
   | "ADT_UNKNOWN_ERROR"
   | "ADT_OBJECT_EXISTS"
   | "ADT_PERMISSION_DENIED"
-  | "ADT_SERVER_ERROR";
+  | "ADT_SERVER_ERROR"
+  | "ADT_NOT_ACCEPTABLE";
 
 export class AdtBaseError extends Error {
   readonly errorCode: AdtErrorCode;
@@ -114,6 +115,22 @@ export class AdtServerError extends AdtBaseError {
   }
 }
 
+export class AdtNotAcceptableError extends AdtBaseError {
+  constructor(message: string, acceptedTypes?: string) {
+    super("ADT_NOT_ACCEPTABLE", message, { acceptedTypes: acceptedTypes ?? null });
+  }
+}
+
+export function parseSap406AcceptedTypes(body: string): string | null {
+  try {
+    const match = body.match(/Accepted content types?:\s*([^\s<"]+)/i);
+    if (match?.[1]) return match[1];
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export function parseSapErrorBody(body: string): { message: string; details: Record<string, unknown> } {
   try {
     const parsed = parseXml(body);
@@ -176,10 +193,20 @@ export function mapHttpError(
     if (csrfHeader === "Required" || csrfHeader === "required") {
       return new AdtCsrfError();
     }
-    return new AdtPermissionError(`Access denied to ${url}`);
+    const { message, details } = parseSapErrorBody(body);
+    return new AdtPermissionError(message || `Access denied to ${url}`);
   }
 
   if (status === 404) return new AdtNotFoundError(url);
+
+  if (status === 406) {
+    const acceptedTypes = parseSap406AcceptedTypes(body);
+    const { message } = parseSapErrorBody(body);
+    return new AdtNotAcceptableError(
+      message || `Not acceptable for ${url}${acceptedTypes ? ` — accepted: ${acceptedTypes}` : ""}`,
+      acceptedTypes ?? undefined,
+    );
+  }
 
   if (status === 409 || status === 423) {
     const { message, details } = parseSapErrorBody(body);

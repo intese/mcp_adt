@@ -139,6 +139,9 @@ export const MOCK_UNIT_TEST_FAILURE_XML = `<?xml version="1.0" encoding="utf-8"?
   </aunit:program>
 </aunit:runResult>`;
 
+export const MOCK_UNIT_TEST_EMPTY_XML = `<?xml version="1.0" encoding="utf-8"?>
+<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit"/>`;
+
 export const MOCK_SAP_ERROR_XML = `<?xml version="1.0" encoding="utf-8"?>
 <exc:exception xmlns:exc="http://www.sap.com/exception">
   <exc:type>NOT_FOUND</exc:type>

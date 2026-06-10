@@ -7,69 +7,203 @@ import type {
   UnitTestMethod,
   UnitTestAlert,
   UnitTestStatus,
+  AUnitObjectUriStrategy,
 } from "../types/index.js";
 import { parseXml, attr, extractText, ensureArray, getNestedValue } from "../utils/xml.js";
 import { logger } from "../utils/logger.js";
 import { validateAdtUri } from "../utils/uri.js";
+import { AdtNotAcceptableError } from "../adt/errors.js";
+
+const EMPTY_RESULT_NOTE =
+  "ADT endpoint accepted the request, but returned an empty aunit:runResult. " +
+  "This usually means the object set did not resolve to executable ABAP Unit tests " +
+  "or the selected URI strategy is not accepted by this backend.";
+
+const DEFAULT_STRATEGY_ORDER: AUnitObjectUriStrategy[] = ["oo-class", "vit-class"];
 
 export class UnitTestService {
   constructor(private readonly client: AdtHttpClient) {}
 
   async runTests(options: UnitTestRunOptions): Promise<UnitTestRunResult> {
     validateAdtUri(options.objectUri);
-    logger.debug("Running unit tests", { uri: options.objectUri });
 
-    const body = this.buildRunRequest(options);
-    const xml = await this.client.post<string>(
-      `${options.objectUri}?method=unittest`,
-      body,
-      {
-        headers: {
-          "Content-Type": "application/vnd.sap.adt.abapunit.testrequest+xml",
-          Accept: "application/vnd.sap.adt.abapunit.testresult+xml",
-        },
-      },
-    );
+    await this.fetchCsrfViaMetadata();
 
-    return this.parseTestResult(xml);
+    const strategies = this.buildStrategyOrder(options);
+    let lastResult: UnitTestRunResult | null = null;
+
+    for (const strategy of strategies) {
+      const result = await this.runWithStrategy(options, strategy);
+      lastResult = result;
+
+      if (result.status !== "no_tests_selected") {
+        return result;
+      }
+      logger.debug("Empty runResult, trying next URI strategy", { triedStrategy: strategy });
+    }
+
+    return lastResult ?? {
+      status: "no_tests_selected",
+      programs: [],
+      summary: { total: 0, passed: 0, failed: 0, errors: 0, diagnosticNote: EMPTY_RESULT_NOTE },
+    };
   }
 
-  private buildRunRequest(options: UnitTestRunOptions): string {
+  private buildStrategyOrder(options: UnitTestRunOptions): AUnitObjectUriStrategy[] {
+    const all: AUnitObjectUriStrategy[] = [...DEFAULT_STRATEGY_ORDER];
+    if (options.packageName) all.push("vit-package");
+
+    if (options.uriStrategy) {
+      const idx = all.indexOf(options.uriStrategy);
+      if (idx > 0) {
+        return [...all.slice(idx), ...all.slice(0, idx)];
+      }
+    }
+    return all;
+  }
+
+  private async fetchCsrfViaMetadata(): Promise<void> {
+    try {
+      await this.client.get<string>("/sap/bc/adt/abapunit/metadata", {
+        headers: {
+          Accept: "application/vnd.sap.adt.abapunit.metadata.result.v1+xml",
+          "x-csrf-token": "fetch",
+        },
+      });
+      const session = this.client.getSessionInfo();
+      logger.debug("ABAP Unit metadata fetched", {
+        csrfPresent: session.csrfToken !== null,
+        cookieCount: Object.keys(session.cookies).length,
+      });
+    } catch (err) {
+      logger.debug("ABAP Unit metadata pre-fetch failed, using existing CSRF token", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private async runWithStrategy(
+    options: UnitTestRunOptions,
+    strategy: AUnitObjectUriStrategy,
+  ): Promise<UnitTestRunResult> {
+    const objectRef = this.buildObjectReference(options, strategy);
+    const body = this.buildRunRequest(options, objectRef);
+    const session = this.client.getSessionInfo();
+
+    logger.debug("Posting unit test run", {
+      endpoint: "/sap/bc/adt/abapunit/testruns",
+      strategy,
+      objectRefPreview: objectRef.replace(/\s+/g, " ").trim().slice(0, 200),
+      csrfPresent: session.csrfToken !== null,
+      cookiesPresent: Object.keys(session.cookies).length > 0,
+    });
+
+    try {
+      const xml = await this.client.post<string>(
+        "/sap/bc/adt/abapunit/testruns",
+        body,
+        {
+          headers: {
+            "Content-Type": "application/xml",
+            Accept: "application/xml",
+          },
+        },
+      );
+
+      logger.debug("Unit test run response received", {
+        strategy,
+        responsePreview: xml?.slice(0, 1000),
+      });
+
+      return this.parseTestResult(xml, strategy);
+    } catch (err) {
+      if (err instanceof AdtNotAcceptableError) {
+        logger.warn("Unit test run returned 406 Not Acceptable", {
+          strategy,
+          acceptedTypes: err.details["acceptedTypes"],
+          message: err.message,
+        });
+      }
+      throw err;
+    }
+  }
+
+  private buildObjectReference(
+    options: UnitTestRunOptions,
+    strategy: AUnitObjectUriStrategy,
+  ): string {
+    const name = this.escapeXml(options.objectName.toUpperCase());
+
+    switch (strategy) {
+      case "oo-class":
+        return `<adtcore:objectReference adtcore:uri="${this.escapeXml(options.objectUri)}"/>`;
+
+      case "vit-class":
+        return `<adtcore:objectReference adtcore:uri="/sap/bc/adt/vit/wb/object_type/clas/object_name/${name}"/>`;
+
+      case "vit-package":
+        if (!options.packageName) {
+          throw new Error("packageName is required for vit-package strategy");
+        }
+        return `<adtcore:objectReference
+          adtcore:uri="/sap/bc/adt/vit/wb/object_type/devck/object_name/${this.escapeXml(options.packageName.toUpperCase())}"/>`;
+    }
+  }
+
+  private buildRunRequest(options: UnitTestRunOptions, objectRef: string): string {
     const risks = options.riskLevels ?? { harmless: true, dangerous: true, critical: true };
-    const durations = options.durations ?? { short: true, medium: true, long: false };
+    const durations = options.durations ?? { short: true, medium: true, long: true };
+    const b = (v: boolean | undefined) => (v !== false ? "true" : "false");
 
     return `<?xml version="1.0" encoding="UTF-8"?>
-<aunit:run xmlns:aunit="http://www.sap.com/adt/aunit">
-  <aunit:options>
-    <aunit:measurements measure="none"/>
-    <aunit:scope ownTests="true" foreignTests="false"/>
-    <aunit:riskLevel
-      harmless="${risks.harmless ? "true" : "false"}"
-      dangerous="${risks.dangerous ? "true" : "false"}"
-      critical="${risks.critical ? "true" : "false"}"/>
-    <aunit:duration
-      short="${durations.short ? "true" : "false"}"
-      medium="${durations.medium ? "true" : "false"}"
-      long="${durations.long ? "true" : "false"}"/>
-  </aunit:options>
+<aunit:runConfiguration xmlns:aunit="http://www.sap.com/adt/aunit">
+  <external>
+    <coverage active="false"/>
+  </external>
+  <options>
+    <uriType value="semantic"/>
+    <testDeterminationStrategy sameProgram="true" assignedTests="false"/>
+    <testRiskLevels harmless="${b(risks.harmless)}" dangerous="${b(risks.dangerous)}" critical="${b(risks.critical)}"/>
+    <testDurations short="${b(durations.short)}" medium="${b(durations.medium)}" long="${b(durations.long)}"/>
+    <withNavigationUri enabled="true"/>
+  </options>
   <adtcore:objectSets xmlns:adtcore="http://www.sap.com/adt/core">
-    <adtcore:objectSet kind="inclusive">
+    <objectSet kind="inclusive">
       <adtcore:objectReferences>
-        <adtcore:objectReference
-          adtcore:uri="${this.escapeXml(options.objectUri)}"
-          adtcore:name="${this.escapeXml(options.objectName)}"/>
+        ${objectRef}
       </adtcore:objectReferences>
-    </adtcore:objectSet>
+    </objectSet>
   </adtcore:objectSets>
-</aunit:run>`;
+</aunit:runConfiguration>`;
   }
 
-  private parseTestResult(xml: string): UnitTestRunResult {
-    if (!xml || xml.trim() === "") {
+  private isEmptyRunResult(xml: string): boolean {
+    if (!xml || xml.trim() === "") return true;
+
+    const compact = xml.replace(/\s+/g, " ").trim();
+    if (/<aunit:runResult[^>]*\/>/.test(compact)) return true;
+    if (/<aunit:runResult[^>]*>\s*<\/aunit:runResult>/.test(compact)) return true;
+
+    try {
+      const parsed = parseXml(xml);
+      const runResult = getNestedValue(parsed, ["aunit:runResult"]) as Record<string, unknown> | undefined;
+      if (!runResult) return true;
+      // SAP returns child elements without namespace prefix (just "program", not "aunit:program")
+      if (!runResult["aunit:program"] && !runResult["program"]) return true;
+    } catch {
+      // fall through — regex check above already covers the common cases
+    }
+
+    return false;
+  }
+
+  private parseTestResult(xml: string, strategy: AUnitObjectUriStrategy): UnitTestRunResult {
+    if (this.isEmptyRunResult(xml)) {
+      logger.debug("Empty aunit:runResult detected", { strategy });
       return {
-        status: "passed",
+        status: "no_tests_selected",
         programs: [],
-        summary: { total: 0, passed: 0, failed: 0, errors: 0 },
+        summary: { total: 0, passed: 0, failed: 0, errors: 0, diagnosticNote: EMPTY_RESULT_NOTE },
       };
     }
 
@@ -79,18 +213,21 @@ export class UnitTestService {
       const parsed = parseXml(xml);
       const programNodes = ensureArray(
         getNestedValue(parsed, ["aunit:runResult", "aunit:program"]) as unknown ??
+          getNestedValue(parsed, ["aunit:runResult", "program"]) as unknown ??
           getNestedValue(parsed, ["runResult", "program"]) as unknown,
       );
 
       for (const progNode of programNodes) {
         programs.push(this.parseProgram(progNode));
       }
-    } catch {
-      // Return partial results
+    } catch (err) {
+      logger.debug("Failed to parse unit test XML", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     const summary = this.computeSummary(programs);
-    const status = summary.failed > 0 || summary.errors > 0 ? "failed" : "passed";
+    const status: UnitTestStatus = summary.failed > 0 || summary.errors > 0 ? "failed" : "passed";
 
     return { status, programs, summary };
   }
@@ -106,9 +243,8 @@ export class UnitTestService {
     );
 
     const testClasses: UnitTestClass[] = classNodes.map((cn) => this.parseClass(cn));
-    const status = testClasses.some((c) => c.status === "failed" || c.status === "error")
-      ? "failed"
-      : "passed";
+    const status: UnitTestStatus =
+      testClasses.some((c) => c.status === "failed" || c.status === "error") ? "failed" : "passed";
 
     return { name, uri, status, testClasses };
   }
@@ -146,9 +282,7 @@ export class UnitTestService {
 
     const alerts: UnitTestAlert[] = alertNodes.map((an) => this.parseAlert(an));
     const status: UnitTestStatus =
-      alerts.some((a) => a.severity === "fatal" || a.severity === "critical")
-        ? "failed"
-        : "passed";
+      alerts.some((a) => a.severity === "fatal" || a.severity === "critical") ? "failed" : "passed";
 
     return {
       name,
@@ -163,9 +297,7 @@ export class UnitTestService {
     const kind = (attr(n, "aunit:kind") || "assertion") as UnitTestAlert["kind"];
     const severity = (attr(n, "aunit:severity") || "critical") as UnitTestAlert["severity"];
 
-    const title = extractText(
-      (n["aunit:title"] ?? n["title"]) as unknown,
-    );
+    const title = extractText((n["aunit:title"] ?? n["title"]) as unknown);
 
     const detailNodes = ensureArray(
       getNestedValue(n, ["aunit:details", "aunit:detail"]) as unknown ??
@@ -208,6 +340,10 @@ export class UnitTestService {
   }
 
   private escapeXml(str: string): string {
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
 }

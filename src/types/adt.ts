@@ -243,7 +243,8 @@ export interface ATCRunOptions {
 
 export type UnitTestAlertKind = "assertion" | "exception" | "warning";
 export type UnitTestAlertSeverity = "fatal" | "critical" | "tolerable";
-export type UnitTestStatus = "passed" | "failed" | "error";
+export type UnitTestStatus = "passed" | "failed" | "error" | "no_tests_selected";
+export type AUnitObjectUriStrategy = "oo-class" | "vit-class" | "vit-package";
 
 export interface UnitTestAlert {
   kind: UnitTestAlertKind;
@@ -288,6 +289,7 @@ export interface UnitTestRunResult {
     failed: number;
     errors: number;
     executionTimeMs?: number;
+    diagnosticNote?: string;
   };
 }
 
@@ -304,6 +306,9 @@ export interface UnitTestRunOptions {
     medium?: boolean;
     long?: boolean;
   };
+  uriStrategy?: AUnitObjectUriStrategy;
+  packageName?: string;
+  useOfficialApiAunitRuns?: boolean;
 }
 
 // ─── Where-Used ───────────────────────────────────────────────────────────────

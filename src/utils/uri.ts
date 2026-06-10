@@ -62,6 +62,20 @@ export function sourceUri(objectUri: string, include = "main"): string {
   return `${objectUri}/source/${include}`;
 }
 
+const CLASS_INCLUDE_MAP: Record<string, string> = {
+  definitions: "definitions",
+  implementations: "implementations",
+  macros: "macros",
+  test: "testclasses",
+  testclasses: "testclasses",
+};
+
+export function classSourceUri(classUri: string, include = "main"): string {
+  if (include === "main") return `${classUri}/source/main`;
+  const segment = CLASS_INCLUDE_MAP[include] ?? include;
+  return `${classUri}/includes/${segment}`;
+}
+
 export function lockUri(objectUri: string): string {
   return `${objectUri}/lock`;
 }

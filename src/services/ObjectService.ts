@@ -24,6 +24,7 @@ import {
   cdsViewUri,
   packageUri,
   sourceUri,
+  classSourceUri,
   withCorrNr,
   validateAdtUri,
 } from "../utils/uri.js";
@@ -46,7 +47,9 @@ export class ObjectService {
 
   async getObjectSource(objectUri: string, include = "main"): Promise<AdtObjectSource> {
     validateAdtUri(objectUri);
-    const uri = sourceUri(objectUri, include);
+    const uri = objectUri.includes("/oo/classes/")
+      ? classSourceUri(objectUri, include)
+      : sourceUri(objectUri, include);
     logger.debug("Getting object source", { uri, include });
 
     const source = await this.client.get<string>(uri, {
@@ -96,7 +99,10 @@ export class ObjectService {
       ? objectUri.replace("/programs/programs/", "/programs/includes/")
       : objectUri;
 
-    let uri = `${sourceUri(writeUri, include)}?lockHandle=${encodeURIComponent(lockHandle)}`;
+    const baseUri = writeUri.includes("/oo/classes/")
+      ? classSourceUri(writeUri, include)
+      : sourceUri(writeUri, include);
+    let uri = `${baseUri}?lockHandle=${encodeURIComponent(lockHandle)}`;
     if (transportNumber) uri = `${uri}&corrNr=${encodeURIComponent(transportNumber)}`;
 
     logger.debug("Setting object source", { uri: objectUri, include });

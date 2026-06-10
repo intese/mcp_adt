@@ -30,3 +30,7 @@ Thumbs.db
 .vscode/settings.json
 .idea/
 *.iml
+
+# Backup files
+*.bak
+*.orig
