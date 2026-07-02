@@ -5,7 +5,7 @@
 *.swp
 *.swo
 
-# Claude Code project memory — local only
+# Local project memory & tooling config — local only
 CLAUDE.md
 .claude/
 

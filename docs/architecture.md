@@ -2,11 +2,11 @@
 
 ## Überblick
 
-Der `sap-adt-mcp-server` ist ein produktionsreifer MCP-Server (Model Context Protocol), der Claude Code direkten Zugriff auf SAP ABAP-Entwicklungsobjekte über offizielle SAP ADT REST APIs ermöglicht.
+Der `sap-adt-mcp-server` ist ein produktionsreifer MCP-Server (Model Context Protocol), der MCP-kompatiblen Clients direkten Zugriff auf SAP ABAP-Entwicklungsobjekte über offizielle SAP ADT REST APIs ermöglicht.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                       Claude Code                            │
+│                       MCP Client                             │
 │                   (MCP Client / Host)                        │
 └──────────────────────────┬──────────────────────────────────┘
                            │ MCP Protocol (stdio / JSON-RPC 2.0)
@@ -166,7 +166,7 @@ Zustandslose Hilfsfunktionen: Logger, XML-Parser, URI-Builder.
 ### Normaler Tool-Aufruf
 
 ```
-Claude Code
+MCP Client
     │
     │  tools/call { name: "adt_read_object", arguments: { objectUri: "..." } }
     ▼
@@ -202,7 +202,7 @@ ObjectService (XML-Parsing, Fehlerprüfung)
 Tool Handler (Ergebnis-Transformation → MCP Content)
     │
     ▼
-Claude Code { content: [{ type: "text", text: "..." }] }
+MCP Client { content: [{ type: "text", text: "..." }] }
 ```
 
 ### Schreib-Workflow (mit Lock)

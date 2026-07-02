@@ -2,7 +2,7 @@
 
 Production-ready MCP (Model Context Protocol) server for SAP ABAP Development Tools (ADT).
 
-Enables Claude Code to directly read, write, activate, and analyze SAP ABAP objects via official SAP ADT REST APIs — without Eclipse, without GUI automation.
+Enables MCP-compatible clients to directly read, write, activate, and analyze SAP ABAP objects via official SAP ADT REST APIs — without Eclipse, without GUI automation.
 
 ---
 

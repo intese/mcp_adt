@@ -1,6 +1,6 @@
 # SAP ADT MCP Server — Dokumentation
 
-Ein produktionsreifer MCP-Server (Model Context Protocol), der Claude Code direkten Zugriff auf SAP ABAP-Entwicklungsobjekte über offizielle SAP ADT REST APIs gibt. Kein Eclipse, keine GUI-Automation.
+Ein produktionsreifer MCP-Server (Model Context Protocol), der MCP-kompatiblen Clients direkten Zugriff auf SAP ABAP-Entwicklungsobjekte über offizielle SAP ADT REST APIs gibt. Kein Eclipse, keine GUI-Automation.
 
 ---
 
@@ -24,7 +24,7 @@ Ein produktionsreifer MCP-Server (Model Context Protocol), der Claude Code direk
 - Node.js 22 oder höher
 - SAP-System mit ADT aktiviert (ECC 6.07+ oder S/4HANA 2020+)
 - Benutzer mit `S_ADT_RES` und `S_DEVELOP`-Berechtigung
-- Claude Code CLI
+- Ein MCP-Client mit stdio-Unterstützung (CLI oder Desktop)
 
 ---
 
@@ -69,7 +69,7 @@ SAP_CA_BUNDLE=                    # optional: Pfad zu CA-Zertifikat
 ## MCP-Server registrieren
 
 ```bash
-# Einmalig registrieren (user scope — gilt für alle Claude-Sessions):
+# Einmalig registrieren (user scope — gilt für alle Sessions):
 claude mcp add --scope user sap-adt -- node /pfad/zum/MCP_ADT/dist/index.js
 
 # Status prüfen:
@@ -78,10 +78,10 @@ claude mcp list
 
 # Nach Code-Änderungen:
 npm run build
-# Dann neue Claude-Code-Session öffnen (der Prozess wird automatisch neu gestartet)
+# Dann neue Client-Session öffnen (der Prozess wird automatisch neu gestartet)
 ```
 
-Der Server startet als langlebiger stdio-Daemon und wird automatisch mit jeder neuen Claude Code Session gestartet.
+Der Server startet als langlebiger stdio-Daemon und wird automatisch mit jeder neuen Client-Session gestartet.
 
 ---
 
@@ -363,7 +363,7 @@ npm run dev
 1. Tool-Handler anlegen: `src/tools/{gruppe}/{name}.ts`
 2. Zod-Schema definieren und `ToolDefinition<typeof schema>` exportieren
 3. In `src/tools/registry.ts` mit `asTool()` registrieren
-4. `npm run build` → neue Claude-Session öffnen
+4. `npm run build` → neue Client-Session öffnen
 
 ### Projektstruktur
 
