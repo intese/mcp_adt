@@ -224,13 +224,20 @@ export class ObjectService {
     objectType: string,
     options: CreateObjectOptions,
   ): Promise<AdtObjectReference> {
-    const body = this.buildGenericObjectXml(objectType, options);
-    const endpoint = this.getCreationEndpoint(objectType, options);
-    await this.client.post<string>(endpoint, body, {
-      headers: { "Content-Type": `application/vnd.sap.adt.${objectType.toLowerCase()}+xml` },
-    });
-    const name = options.name.toUpperCase();
-    return { uri: `${endpoint}/${name}`, name, type: objectType };
+    switch (objectType) {
+      case "CLAS/OC":
+        return this.createClass(options);
+      case "INTF/OI":
+        return this.createInterface(options);
+      case "PROG/P":
+        return this.createReport(options);
+      case "FUGR/F":
+        return this.createFunctionGroup(options);
+      case "DDLS/DF":
+        return this.createCdsView(options);
+      default:
+        throw new Error(`Unsupported object type for generic creation: ${objectType}`);
+    }
   }
 
   // ─── Delete ───────────────────────────────────────────────────────────────
@@ -253,7 +260,7 @@ export class ObjectService {
 
   private buildClassXml(options: CreateClassOptions): string {
     const name = options.name.toUpperCase();
-    const responsible = (options.responsible ?? "").toUpperCase();
+    const responsible = (options.responsible ?? this.client.getUsername()).toUpperCase();
     const lang = options.language ?? "EN";
     const pkg = options.packageName.toUpperCase();
     const isFinal = options.isFinal ? "true" : "false";
@@ -359,23 +366,6 @@ export class ObjectService {
 </dataDefinition:abapDataDefinition>`;
   }
 
-  private buildGenericObjectXml(objectType: string, options: CreateObjectOptions): string {
-    const name = options.name.toUpperCase();
-    const pkg = options.packageName.toUpperCase();
-    const lang = options.language ?? "EN";
-
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<obj:object
-  xmlns:obj="http://www.sap.com/adt/object"
-  xmlns:adtcore="http://www.sap.com/adt/core"
-  adtcore:description="${this.escapeXml(options.description)}"
-  adtcore:language="${lang}"
-  adtcore:name="${name}"
-  adtcore:type="${objectType}">
-  <adtcore:packageRef adtcore:name="${pkg}"/>
-</obj:object>`;
-  }
-
   private buildNodeStructureRequest(
     packageOrUri: string,
     objectName?: string,
@@ -388,12 +378,6 @@ export class ObjectService {
   ${objectName ? `<nodecriteria:objectName>${this.escapeXml(objectName)}</nodecriteria:objectName>` : ""}
   ${objectType ? `<nodecriteria:objectType>${this.escapeXml(objectType)}</nodecriteria:objectType>` : ""}
 </nodecriteria:nodeCriteria>`;
-  }
-
-  private getCreationEndpoint(objectType: string, options: CreateObjectOptions): string {
-    const pkg = encodeURIComponent(options.packageName);
-    const corrNr = options.transportNumber ? `&corrNr=${options.transportNumber}` : "";
-    return `/sap/bc/adt/repository/objects?objectType=${objectType}&packageName=${pkg}${corrNr}`;
   }
 
   // ─── Response Parsers ─────────────────────────────────────────────────────

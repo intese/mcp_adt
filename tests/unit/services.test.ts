@@ -2,6 +2,7 @@ import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import { ActivationService } from "../../src/services/ActivationService.js";
 import { SyntaxService } from "../../src/services/SyntaxService.js";
 import { UnitTestService } from "../../src/services/UnitTestService.js";
+import { ObjectService } from "../../src/services/ObjectService.js";
 import {
   MOCK_ACTIVATION_SUCCESS_XML,
   MOCK_ACTIVATION_ERROR_XML,
@@ -46,6 +47,7 @@ function createMockClient(
       loginTime: new Date(),
     }),
     createStatelessClone: jest.fn(),
+    getUsername: jest.fn().mockReturnValue("TESTUSER"),
   };
   return mock as unknown as AdtHttpClient;
 }
@@ -176,5 +178,83 @@ describe("UnitTestService", () => {
     // post should have been called twice (once per strategy)
     const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
     expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("ObjectService", () => {
+  it("defaults adtcore:responsible to the configured user when not supplied", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client);
+
+    await service.createClass({
+      name: "ZCL_TEST",
+      description: "Test class",
+      packageName: "$TMP",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [, body] = mockPost.mock.calls[0] as [string, string];
+    expect(body).toContain('adtcore:responsible="TESTUSER"');
+    expect(body).not.toContain('adtcore:responsible=""');
+  });
+
+  it("honors an explicitly supplied responsible value", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client);
+
+    await service.createClass({
+      name: "ZCL_TEST",
+      description: "Test class",
+      packageName: "$TMP",
+      responsible: "OTHERUSER",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [, body] = mockPost.mock.calls[0] as [string, string];
+    expect(body).toContain('adtcore:responsible="OTHERUSER"');
+  });
+
+  it("createObject delegates CLAS/OC to the class-specific endpoint", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client);
+
+    await service.createObject("CLAS/OC", {
+      name: "ZCL_TEST",
+      description: "Test class",
+      packageName: "$TMP",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [path] = mockPost.mock.calls[0] as [string, string];
+    expect(path).toContain("/sap/bc/adt/oo/classes");
+    expect(path).not.toContain("/sap/bc/adt/repository/objects");
+  });
+
+  it("createObject delegates INTF/OI to the interface-specific endpoint", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client);
+
+    await service.createObject("INTF/OI", {
+      name: "ZIF_TEST",
+      description: "Test interface",
+      packageName: "$TMP",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [path] = mockPost.mock.calls[0] as [string, string];
+    expect(path).toContain("/sap/bc/adt/oo/interfaces");
+  });
+
+  it("createObject rejects unsupported object types", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client);
+
+    await expect(
+      service.createObject("XYZ/X", {
+        name: "ZXYZ_TEST",
+        description: "Unsupported",
+        packageName: "$TMP",
+      }),
+    ).rejects.toThrow(/Unsupported object type/);
   });
 });

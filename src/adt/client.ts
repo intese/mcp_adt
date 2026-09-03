@@ -147,6 +147,10 @@ export class AdtHttpClient {
     this.session.setType(type);
   }
 
+  getUsername(): string {
+    return this.config.user;
+  }
+
   /** Create independent clone sharing credentials but not session state */
   createStatelessClone(): AdtHttpClient {
     const cloneConfig: AdtClientConfig = { ...this.config };
