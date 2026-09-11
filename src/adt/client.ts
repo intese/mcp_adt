@@ -107,7 +107,8 @@ export class AdtHttpClient {
   }
 
   async get<T = string>(path: string, options: RequestOptions = {}): Promise<T> {
-    return this.executeWithRetry<T>("GET", path, undefined, options);
+    const { data } = await this.executeWithRetry<T>("GET", path, undefined, options);
+    return data;
   }
 
   async post<T = string>(
@@ -115,10 +116,11 @@ export class AdtHttpClient {
     body: unknown,
     options: RequestOptions = {},
   ): Promise<T> {
-    return this.executeWithRetry<T>("POST", path, body, {
+    const { data } = await this.executeWithRetry<T>("POST", path, body, {
       ...options,
       withCsrf: true,
     });
+    return data;
   }
 
   async put<T = string>(
@@ -126,14 +128,28 @@ export class AdtHttpClient {
     body: unknown,
     options: RequestOptions = {},
   ): Promise<T> {
-    return this.executeWithRetry<T>("PUT", path, body, {
+    const { data } = await this.executeWithRetry<T>("PUT", path, body, {
       ...options,
       withCsrf: true,
     });
+    return data;
   }
 
   async delete<T = string>(path: string, options: RequestOptions = {}): Promise<T> {
-    return this.executeWithRetry<T>("DELETE", path, undefined, {
+    const { data } = await this.executeWithRetry<T>("DELETE", path, undefined, {
+      ...options,
+      withCsrf: true,
+    });
+    return data;
+  }
+
+  /** Like post(), but also exposes response headers (e.g. Location) that get() /post() discard. */
+  async postForHeaders<T = string>(
+    path: string,
+    body: unknown,
+    options: RequestOptions = {},
+  ): Promise<{ data: T; headers: Record<string, string> }> {
+    return this.executeWithRetry<T>("POST", path, body, {
       ...options,
       withCsrf: true,
     });
@@ -165,10 +181,9 @@ export class AdtHttpClient {
     body: unknown,
     options: RequestOptions,
     attempt = 0,
-  ): Promise<T> {
+  ): Promise<{ data: T; headers: Record<string, string> }> {
     try {
-      const response = await this.rawRequest<T>(method, path, body, options);
-      return response;
+      return await this.rawRequest<T>(method, path, body, options);
     } catch (err) {
       if (err instanceof AdtCsrfError && attempt === 0) {
         logger.debug("CSRF error, refetching token and retrying");
@@ -203,7 +218,7 @@ export class AdtHttpClient {
     path: string,
     body: unknown,
     options: RequestOptions,
-  ): Promise<T> {
+  ): Promise<{ data: T; headers: Record<string, string> }> {
     const headers = this.buildHeaders(options);
 
     const axiosConfig: AxiosRequestConfig = {
@@ -242,7 +257,7 @@ export class AdtHttpClient {
       );
     }
 
-    return response.data as T;
+    return { data: response.data as T, headers: response.headers as Record<string, string> };
   }
 
   private async rawGet(path: string, options: RequestOptions = {}): Promise<AxiosResponse> {

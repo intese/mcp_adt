@@ -3,14 +3,21 @@ import { ActivationService } from "../../src/services/ActivationService.js";
 import { SyntaxService } from "../../src/services/SyntaxService.js";
 import { UnitTestService } from "../../src/services/UnitTestService.js";
 import { ObjectService } from "../../src/services/ObjectService.js";
+import { ATCService } from "../../src/services/ATCService.js";
+import { TransportService } from "../../src/services/TransportService.js";
 import {
   MOCK_ACTIVATION_SUCCESS_XML,
   MOCK_ACTIVATION_ERROR_XML,
+  MOCK_ACTIVATION_ERROR_NESTED_TEXT_XML,
   MOCK_SYNTAX_CHECK_CLEAN_XML,
   MOCK_SYNTAX_CHECK_ERROR_XML,
   MOCK_UNIT_TEST_RESULT_XML,
   MOCK_UNIT_TEST_FAILURE_XML,
   MOCK_UNIT_TEST_EMPTY_XML,
+  MOCK_ATC_RUN_RESPONSE_XML,
+  MOCK_ATC_WORKLIST_XML,
+  MOCK_ATC_WORKLIST_EMPTY_XML,
+  MOCK_CLASS_METADATA_XML,
 } from "../mocks/adtResponses.js";
 import type { AdtHttpClient } from "../../src/adt/client.js";
 
@@ -21,7 +28,13 @@ function createMockClient(
   let postCallCount = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mock: Record<string, any> = {
-    get: jest.fn().mockImplementation(async () => ""),
+    get: jest.fn().mockImplementation(async (path: unknown) => {
+      const p = String(path);
+      for (const [key, val] of Object.entries(responses)) {
+        if (p.includes(key)) return val;
+      }
+      return "";
+    }),
     post: jest.fn().mockImplementation(async (path: unknown) => {
       const p = String(path);
       if (postSequence && p.includes("testruns")) {
@@ -45,6 +58,13 @@ function createMockClient(
       cookies: { SAP_SESSIONID_XXX: "abc123" },
       type: "stateless",
       loginTime: new Date(),
+    }),
+    postForHeaders: jest.fn().mockImplementation(async (path: unknown, _body: unknown, _opts: unknown) => {
+      const p = String(path);
+      for (const [key, val] of Object.entries(responses)) {
+        if (p.includes(key)) return { data: val, headers: {} };
+      }
+      return { data: "", headers: {} };
     }),
     createStatelessClone: jest.fn(),
     getUsername: jest.fn().mockReturnValue("TESTUSER"),
@@ -89,6 +109,30 @@ describe("ActivationService", () => {
     );
 
     expect(result.success).toBe(true);
+  });
+
+  it("extracts the message description when sent as direct element text", async () => {
+    const client = createMockClient({ activation: MOCK_ACTIVATION_ERROR_XML });
+    const service = new ActivationService(client);
+
+    const result = await service.activateObject(
+      "/sap/bc/adt/classes/classes/ZCL_TEST",
+      "ZCL_TEST",
+    );
+
+    expect(result.messages[0]?.description).toContain("Unknown identifier");
+  });
+
+  it("extracts the message description when nested under shortText/txt", async () => {
+    const client = createMockClient({ activation: MOCK_ACTIVATION_ERROR_NESTED_TEXT_XML });
+    const service = new ActivationService(client);
+
+    const result = await service.activateObject(
+      "/sap/bc/adt/classes/classes/ZCL_TEST",
+      "ZCL_TEST",
+    );
+
+    expect(result.messages[0]?.description).toContain("not allowed outside a loop");
   });
 });
 
@@ -256,5 +300,103 @@ describe("ObjectService", () => {
         packageName: "$TMP",
       }),
     ).rejects.toThrow(/Unsupported object type/);
+  });
+
+  it("getObjectMetadata requests Accept: */* (SAP rejects every vnd.sap.* type here)", async () => {
+    const client = createMockClient({ classes: MOCK_CLASS_METADATA_XML });
+    const service = new ObjectService(client);
+
+    const metadata = await service.getObjectMetadata(
+      "/sap/bc/adt/oo/classes/ZCL_TEST_CLASS",
+    );
+
+    const mockGet = (client as unknown as { get: ReturnType<typeof jest.fn> }).get;
+    const [, options] = mockGet.mock.calls[0] as [string, { headers: Record<string, string> }];
+    expect(options.headers.Accept).toBe("*/*");
+    expect(metadata.name).toBe("ZCL_TEST_CLASS");
+  });
+});
+
+describe("ATCService", () => {
+  it("extracts the worklist ID from the run response body and returns parsed findings", async () => {
+    const client = createMockClient({
+      "atc/runs": MOCK_ATC_RUN_RESPONSE_XML,
+      "atc/worklists": MOCK_ATC_WORKLIST_XML,
+    });
+    const service = new ATCService(client);
+
+    const result = await service.runATC({
+      objects: [{ uri: "/sap/bc/adt/oo/classes/zcl_test_class", name: "ZCL_TEST_CLASS" }],
+    });
+
+    expect(result.worklistId).toBe("00000000000000000000000000000000");
+    expect(result.totalFindings).toBe(2);
+    expect(result.findings[0]?.checkId).toBe("CHECK123");
+    expect(result.findings[0]?.priority).toBe(3);
+    expect(result.findings[0]?.line).toBe(34);
+    expect(result.findings[0]?.column).toBe(0);
+    expect(result.findings[1]?.priority).toBe(1);
+    expect(result.byPriority[1]).toBe(1);
+    expect(result.byPriority[3]).toBe(1);
+  });
+
+  it("returns zero findings for an empty worklist without treating it as an error", async () => {
+    const client = createMockClient({ "atc/worklists": MOCK_ATC_WORKLIST_EMPTY_XML });
+    const service = new ATCService(client);
+
+    const result = await service.getWorklistResult("00000000000000000000000000000000");
+
+    expect(result.totalFindings).toBe(0);
+    expect(result.findings).toHaveLength(0);
+  });
+
+  it("sends a client-generated worklistId and the atc namespace in the run request", async () => {
+    const client = createMockClient({
+      "atc/runs": MOCK_ATC_RUN_RESPONSE_XML,
+      "atc/worklists": MOCK_ATC_WORKLIST_XML,
+    });
+    const service = new ATCService(client);
+
+    await service.runATC({
+      objects: [{ uri: "/sap/bc/adt/oo/classes/zcl_test_class", name: "ZCL_TEST_CLASS" }],
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [path, body] = mockPost.mock.calls[0] as [string, string];
+    expect(path).toMatch(/worklistId=[0-9a-f-]{36}/);
+    expect(body).toContain('xmlns:atc="http://www.sap.com/adt/atc"');
+    expect(body).toContain('<objectSet kind="inclusive">');
+  });
+});
+
+describe("TransportService", () => {
+  it("prefers the Location header over the body when creating a transport", async () => {
+    const client = createMockClient({});
+    (client as unknown as { postForHeaders: unknown }).postForHeaders = jest
+      .fn()
+      .mockImplementation(async () => ({
+        data: '<tm:request xmlns:tm="http://www.sap.com/adt/cts/transports"/>',
+        headers: { location: "/sap/bc/adt/cts/transportrequests/DEVK900123" },
+      }));
+    const service = new TransportService(client);
+
+    const number = await service.createTransport({ description: "Test transport" });
+
+    expect(number).toBe("DEVK900123");
+  });
+
+  it("falls back to parsing the body when no Location header is present", async () => {
+    const client = createMockClient({});
+    (client as unknown as { postForHeaders: unknown }).postForHeaders = jest
+      .fn()
+      .mockImplementation(async () => ({
+        data: '<tm:request xmlns:tm="http://www.sap.com/adt/cts/transports" tm:number="DEVK900456"/>',
+        headers: {},
+      }));
+    const service = new TransportService(client);
+
+    const number = await service.createTransport({ description: "Test transport" });
+
+    expect(number).toBe("DEVK900456");
   });
 });

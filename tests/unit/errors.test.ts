@@ -4,8 +4,10 @@ import {
   AdtNotFoundError,
   AdtLockError,
   AdtCsrfError,
+  AdtNotAcceptableError,
   mapHttpError,
   parseSapErrorBody,
+  parseSap406AcceptedTypes,
 } from "../../src/adt/errors.js";
 import { MOCK_SAP_ERROR_XML } from "../mocks/adtResponses.js";
 
@@ -48,6 +50,33 @@ describe("ADT Error handling", () => {
     it("maps 423 to lock error", () => {
       const err = mapHttpError(423, "/test", "", {});
       expect(err).toBeInstanceOf(AdtLockError);
+    });
+
+    it("maps 406 with German 'Zulässige Inhaltstypen' wording to not-acceptable error", () => {
+      const body = `<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework"><message lang="EN">Nachrichteninhalt ist nicht zulässig. Zulässige Inhaltstypen: application/xml</message></exc:exception>`;
+      const err = mapHttpError(406, "/test", body, {});
+      expect(err).toBeInstanceOf(AdtNotAcceptableError);
+      expect((err as AdtNotAcceptableError).details.acceptedTypes).toBe("application/xml");
+    });
+  });
+
+  describe("parseSap406AcceptedTypes", () => {
+    it("parses the English 'Accepted content type' wording", () => {
+      expect(parseSap406AcceptedTypes("Accepted content type: application/xml")).toBe(
+        "application/xml",
+      );
+    });
+
+    it("parses the German 'Zulässige Inhaltstypen' wording", () => {
+      expect(
+        parseSap406AcceptedTypes(
+          "Nachrichteninhalt ist nicht zulässig. Zulässige Inhaltstypen: application/atc.worklist.v1+xml",
+        ),
+      ).toBe("application/atc.worklist.v1+xml");
+    });
+
+    it("returns null when no accepted type is present", () => {
+      expect(parseSap406AcceptedTypes("Zulässige Inhaltstypen:")).toBeNull();
     });
   });
 

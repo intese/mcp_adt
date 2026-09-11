@@ -65,6 +65,18 @@ export const MOCK_ACTIVATION_ERROR_XML = `<?xml version="1.0" encoding="utf-8"?>
   </ioc:entry>
 </ioc:inactiveObjects>`;
 
+// Unverified alternative shape (see ActivationService.extractMessageText doc comment):
+// some SAP chkl:-family responses nest the message text under shortText/txt instead
+// of sending it as the <msg> element's direct text content.
+export const MOCK_ACTIVATION_ERROR_NESTED_TEXT_XML = `<?xml version="1.0" encoding="utf-8"?>
+<chkl:messages xmlns:chkl="http://www.sap.com/adt/activation">
+  <msg type="E" line="1">
+    <shortText>
+      <txt>Statement "CHECK" is not allowed outside a loop</txt>
+    </shortText>
+  </msg>
+</chkl:messages>`;
+
 export const MOCK_SYNTAX_CHECK_CLEAN_XML = `<?xml version="1.0" encoding="utf-8"?>
 <checkRun:checkResultList xmlns:checkRun="http://www.sap.com/adt/checkrun">
   <checkRun:checkResult checkRun:reporter="abapCheckRun">
@@ -148,3 +160,72 @@ export const MOCK_SAP_ERROR_XML = `<?xml version="1.0" encoding="utf-8"?>
   <exc:message>Object ZCL_NONEXISTENT does not exist</exc:message>
   <exc:localizedMessage>Object ZCL_NONEXISTENT does not exist</exc:localizedMessage>
 </exc:exception>`;
+
+// Captured from a real SAP ADT ATC run (system "ird", class ZCL_MA_EMPLOYEE_IMPORT),
+// with the object/finding identifiers genericized. This is the actual response shape —
+// docs/adt-endpoints.md and the original ATCService implementation both assumed a
+// different (incorrect) schema before this was verified live.
+export const MOCK_ATC_RUN_RESPONSE_XML = `<?xml version="1.0" encoding="utf-8"?>
+<atcworklist:worklistRun xmlns:atcworklist="http://www.sap.com/adt/atc/worklist">
+  <atcworklist:worklistId>00000000000000000000000000000000</atcworklist:worklistId>
+  <atcworklist:worklistTimestamp>2026-09-11T09:58:14Z</atcworklist:worklistTimestamp>
+  <atcworklist:infos>
+    <atcinfo:info xmlns:atcinfo="http://www.sap.com/adt/atc/info">
+      <atcinfo:type>FINDING_STATS</atcinfo:type>
+      <atcinfo:description>1,0,2</atcinfo:description>
+    </atcinfo:info>
+  </atcworklist:infos>
+</atcworklist:worklistRun>`;
+
+export const MOCK_ATC_WORKLIST_XML = `<?xml version="1.0" encoding="utf-8"?>
+<atcworklist:worklist atcworklist:id="00000000000000000000000000000000"
+  atcworklist:usedObjectSet="99999999999999999999999999999999"
+  atcworklist:objectSetIsComplete="true"
+  xmlns:atcworklist="http://www.sap.com/adt/atc/worklist">
+  <atcworklist:objectSets>
+    <atcworklist:objectSet atcworklist:name="00000000000000000000000000000000" atcworklist:title="Alle Objekte" atcworklist:kind="ALL"/>
+    <atcworklist:objectSet atcworklist:name="99999999999999999999999999999999" atcworklist:title="Letzter Prüflauf" atcworklist:kind="LAST_RUN"/>
+  </atcworklist:objectSets>
+  <atcworklist:objects>
+    <atcobject:object adtcore:uri="/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_TEST_CLASS"
+      adtcore:type="CLAS" adtcore:name="ZCL_TEST_CLASS" adtcore:packageName="ZTESTPKG"
+      atcobject:author="TESTUSER"
+      xmlns:atcobject="http://www.sap.com/adt/atc/object" xmlns:adtcore="http://www.sap.com/adt/core">
+      <atcobject:findings>
+        <atcfinding:finding adtcore:uri="/sap/bc/adt/atc/findings/itemid/ABC123/index/116"
+          atcfinding:location="/sap/bc/adt/oo/classes/zcl_test_class/includes/testclasses#start=34,0"
+          atcfinding:processor="TESTUSER" atcfinding:lastChangedBy="TESTUSER"
+          atcfinding:priority="3" atcfinding:checkId="CHECK123"
+          atcfinding:checkTitle="Erweiterte Programmprüfung (SLIN)"
+          atcfinding:messageId="1700"
+          atcfinding:messageTitle="Zeichenketten ohne Textelement werden nicht übersetzt"
+          atcfinding:exemptionApproval="-" atcfinding:exemptionKind="" atcfinding:checksum="927288306"
+          atcfinding:remarkText="" atcfinding:remarkLink="" atcfinding:quickfixInfo="atc:ABC123,116"
+          xmlns:atcfinding="http://www.sap.com/adt/atc/finding"/>
+        <atcfinding:finding adtcore:uri="/sap/bc/adt/atc/findings/itemid/DEF456/index/117"
+          atcfinding:location="/sap/bc/adt/oo/classes/zcl_test_class/includes/implementations#start=52,0"
+          atcfinding:processor="TESTUSER" atcfinding:lastChangedBy="TESTUSER"
+          atcfinding:priority="1" atcfinding:checkId="CHECK456"
+          atcfinding:checkTitle="Problemat.Anweisungen für Ergebnis von SELECT/OPEN CURSOR ohne ORDER BY suchen"
+          atcfinding:messageId="AMB_SINGLE"
+          atcfinding:messageTitle="SELECT SINGLE möglicherweise nicht eindeutig"
+          atcfinding:exemptionApproval="-" atcfinding:exemptionKind="" atcfinding:checksum="-1303041211"
+          atcfinding:remarkText="" atcfinding:remarkLink="" atcfinding:quickfixInfo="atc:DEF456,117"
+          xmlns:atcfinding="http://www.sap.com/adt/atc/finding"/>
+      </atcobject:findings>
+    </atcobject:object>
+  </atcworklist:objects>
+  <atcworklist:infos/>
+</atcworklist:worklist>`;
+
+export const MOCK_ATC_WORKLIST_EMPTY_XML = `<?xml version="1.0" encoding="utf-8"?>
+<atcworklist:worklist atcworklist:id="00000000000000000000000000000000"
+  atcworklist:usedObjectSet="00000000000000000000000000000000"
+  atcworklist:objectSetIsComplete="true"
+  xmlns:atcworklist="http://www.sap.com/adt/atc/worklist">
+  <atcworklist:objectSets>
+    <atcworklist:objectSet atcworklist:name="00000000000000000000000000000000" atcworklist:title="Alle Objekte" atcworklist:kind="ALL"/>
+  </atcworklist:objectSets>
+  <atcworklist:objects/>
+  <atcworklist:infos/>
+</atcworklist:worklist>`;

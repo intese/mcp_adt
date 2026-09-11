@@ -38,8 +38,15 @@ Token-Erneuerung bei `403 Forbidden` mit CSRF-Kontext.
 
 ```
 GET {objectUri}
-Accept: application/vnd.sap.adt.core.objectstructure+xml
+Accept: */*
 ```
+
+**Verifiziert 2026-09-11 live gegen `ird`** (Klasse `ZCL_MA_EMPLOYEE_IMPORT`, Interface
+`ZIF_MA_EMPLOYEE_IMPORT`): Jeder spezifische `vnd.sap.*`-Content-Type — inkl. des zuvor
+hier dokumentierten `application/vnd.sap.adt.core.objectstructure+xml` — wird von SAP mit
+`406 Not Acceptable` („Zulässige Inhaltstypen:" mit leerer Liste) abgelehnt, für Klassen
+und Interfaces gleichermaßen. Nur `Accept: */*` (bzw. gar kein Accept-Header) liefert
+`200 OK`.
 
 ### Quelltext lesen
 
@@ -438,49 +445,104 @@ Accept: application/vnd.sap.adt.repository.informationsystem.objecttypes+xml
 
 ## ATC (ABAP Test Cockpit)
 
+**Verifiziert am 2026-09-11 live gegen SAP-System `ird` (Klasse `ZCL_MA_EMPLOYEE_IMPORT`,
+Paket `Z_SERVICES`).** Die vorherige Version dieses Abschnitts war unvalidierte
+Dokumentation und in mehreren Punkten falsch (falscher XML-Namespace, falsche
+Accept-Header, fälschlich angenommener `Location`-Header) — das war die eigentliche
+Ursache dafür, dass `adt_run_atc` immer mit „Accept header missing" scheiterte.
+
 ### ATC-Lauf starten
 
 ```
 POST /sap/bc/adt/atc/runs
-  ?maximumVerdicts={n}
+  ?worklistId={client-generated UUID}
+  &maximumVerdicts={n}
 Content-Type: application/vnd.sap.adt.atc.run.request+xml
+Accept: application/xml
 x-csrf-token: {token}
 
 Body:
 <?xml version="1.0" encoding="UTF-8"?>
-<atcrun:run xmlns:atcrun="http://www.sap.com/adt/atc/run">
-  <atcrun:maximumVerdicts>{n}</atcrun:maximumVerdicts>
+<atc:run xmlns:atc="http://www.sap.com/adt/atc" maximumVerdicts="{n}">
   <objectSets>
-    <atcobjectset:objectSet
-      xmlns:atcobjectset="http://www.sap.com/adt/atc/atcobjectset">
-      <atcobjectset:adtCoreObjectSet>
-        <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
-          <adtcore:objectReference
-            adtcore:uri="{objectUri}"
-            adtcore:name="{objectName}"/>
-        </adtcore:objectReferences>
-      </atcobjectset:adtCoreObjectSet>
-    </atcobjectset:objectSet>
+    <objectSet kind="inclusive">
+      <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:objectReference
+          adtcore:uri="{objectUri}"
+          adtcore:name="{objectName}"/>
+      </adtcore:objectReferences>
+    </objectSet>
   </objectSets>
-</atcrun:run>
+</atc:run>
 ```
 
-Response: `Location`-Header mit Worklist-URI.
+**Wichtig:**
+- Der Namespace ist `http://www.sap.com/adt/atc` (**nicht** `.../atc/run`).
+- `worklistId` muss **client-seitig generiert** (z. B. UUID) und als Query-Parameter
+  mitgeschickt werden — ohne ihn: `400 Parameter worklistId wurde nicht gefunden`.
+- `Accept: application/vnd.sap.adt.atc.run.result+xml` (naheliegend, aber falsch) führt
+  zu `400 Bad Request` mit der irreführenden Meldung „Accept header missing"
+  (`subType: acceptHeaderMissing`) — SAPs generischer Fehler für „Content-Type nicht
+  registriert", nicht für einen technisch fehlenden Header. Nur `application/xml` ist
+  für diese Ressource registriert.
+- Response: **kein** `Location`-Header — die Worklist-ID kommt im **Body** zurück:
+  ```
+  <atcworklist:worklistRun xmlns:atcworklist="http://www.sap.com/adt/atc/worklist">
+    <atcworklist:worklistId>{id}</atcworklist:worklistId>
+    <atcworklist:worklistTimestamp>{iso}</atcworklist:worklistTimestamp>
+    <atcworklist:infos>
+      <atcinfo:info xmlns:atcinfo="http://www.sap.com/adt/atc/info">
+        <atcinfo:type>FINDING_STATS</atcinfo:type>
+        <atcinfo:description>{errors},{warnings},{infos}</atcinfo:description>
+      </atcinfo:info>
+    </atcworklist:infos>
+  </atcworklist:worklistRun>
+  ```
+- Der Lauf ist synchron — kein Polling nötig, die Findings sind sofort über
+  `GET /atc/worklists/{worklistId}` abrufbar.
 
 ### ATC-Ergebnisse lesen
 
 ```
 GET /sap/bc/adt/atc/worklists/{worklistId}
-  ?includeExemptedFindings={true|false}
-Accept: application/vnd.sap.adt.atc.worklist+xml
+Accept: application/atc.worklist.v1+xml
 ```
+
+Response (Auszug, tatsächliche Struktur):
+```
+<atcworklist:worklist atcworklist:id="{id}" xmlns:atcworklist="http://www.sap.com/adt/atc/worklist">
+  <atcworklist:objectSets>
+    <atcworklist:objectSet atcworklist:name="{...}" atcworklist:title="{...}" atcworklist:kind="ALL|LAST_RUN"/>
+  </atcworklist:objectSets>
+  <atcworklist:objects>
+    <atcobject:object adtcore:uri="..." adtcore:type="CLAS" adtcore:name="..." adtcore:packageName="..."
+      atcobject:author="..." xmlns:atcobject="http://www.sap.com/adt/atc/object" xmlns:adtcore="http://www.sap.com/adt/core">
+      <atcobject:findings>
+        <atcfinding:finding adtcore:uri="..." atcfinding:location=".../includes/implementations#start={line},{col}"
+          atcfinding:priority="1-4" atcfinding:checkId="..." atcfinding:checkTitle="..."
+          atcfinding:messageId="..." atcfinding:messageTitle="..." atcfinding:exemptionApproval="-"
+          xmlns:atcfinding="http://www.sap.com/adt/atc/finding"/>
+      </atcobject:findings>
+    </atcobject:object>
+  </atcworklist:objects>
+</atcworklist:worklist>
+```
+
+Hinweis: `objects` ist ein **Geschwister** von `objectSets` (nicht darin verschachtelt).
+Zeile/Spalte stehen **nicht** als eigene Attribute, sondern im URI-Fragment von
+`atcfinding:location` (`#start={line},{col}`).
 
 ### ATC-Konfiguration lesen
 
 ```
 GET /sap/bc/adt/atc/customizing
-Accept: application/vnd.sap.adt.atc.customizing+xml
+Accept: application/xml
 ```
+
+(Nicht `application/vnd.sap.adt.atc.customizing+xml` — dieser Typ wird von SAP mit
+`406 Not Acceptable` abgelehnt.) Liefert u. a. `systemCheckVariant` (Default-Check-
+Variante); im getesteten System reicht die System-Default-Variante aus, ein expliziter
+`checkVariant`-Parameter beim Run war nicht nötig.
 
 ---
 

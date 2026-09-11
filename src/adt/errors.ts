@@ -123,7 +123,7 @@ export class AdtNotAcceptableError extends AdtBaseError {
 
 export function parseSap406AcceptedTypes(body: string): string | null {
   try {
-    const match = body.match(/Accepted content types?:\s*([^\s<"]+)/i);
+    const match = body.match(/(?:Accepted content types?|Zulässige Inhaltstypen):\s*([^\s<"]+)/i);
     if (match?.[1]) return match[1];
   } catch {
     // ignore

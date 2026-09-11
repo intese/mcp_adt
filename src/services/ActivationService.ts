@@ -102,9 +102,32 @@ ${refs}
       type: (attr(node, "type") || "I") as ActivationMessage["type"],
       line: parseInt(attr(node, "line") || "0", 10) || undefined,
       column: parseInt(attr(node, "column") || "0", 10) || undefined,
-      description: extractText(node),
+      description: this.extractMessageText(node),
       objectUri: attr(node, "adtcore:uri") || undefined,
     }));
+  }
+
+  /**
+   * UNVERIFIED (2026-09-11): live testing showed `<msg>`'s description always came
+   * back empty via a plain `extractText(node)` read, but a repeat live capture to
+   * confirm the real shape wasn't possible (see CLAUDE.md "Offene Punkte" —
+   * diagnostic attempts got stuck on orphaned ENQUEUE locks without SM12 access to
+   * recover). SAP's other `chkl:`-family check-list responses commonly nest the
+   * message text under a `shortText`/`txt` child element rather than as direct
+   * text, so that's tried as a fallback here. Re-verify against a real error
+   * response before trusting this fully.
+   */
+  private extractMessageText(node: unknown): string {
+    const direct = extractText(node);
+    if (direct) return direct;
+
+    const n = node as Record<string, unknown>;
+    const shortText = n["shortText"] as Record<string, unknown> | undefined;
+    if (shortText) {
+      const nested = extractText(shortText["txt"] ?? shortText);
+      if (nested) return nested;
+    }
+    return "";
   }
 
   private extractInactiveObjects(parsed: Record<string, unknown>): InactiveObject[] {
