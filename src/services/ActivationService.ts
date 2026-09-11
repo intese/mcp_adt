@@ -110,9 +110,9 @@ ${refs}
   /**
    * UNVERIFIED (2026-09-11): live testing showed `<msg>`'s description always came
    * back empty via a plain `extractText(node)` read, but a repeat live capture to
-   * confirm the real shape wasn't possible (see CLAUDE.md "Offene Punkte" —
-   * diagnostic attempts got stuck on orphaned ENQUEUE locks without SM12 access to
-   * recover). SAP's other `chkl:`-family check-list responses commonly nest the
+   * confirm the real shape wasn't possible — diagnostic attempts got stuck on
+   * orphaned ENQUEUE locks without lock-table (SM12) access to recover. SAP's
+   * other `chkl:`-family check-list responses commonly nest the
    * message text under a `shortText`/`txt` child element rather than as direct
    * text, so that's tried as a fallback here. Re-verify against a real error
    * response before trusting this fully.
