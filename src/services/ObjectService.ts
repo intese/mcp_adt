@@ -38,8 +38,12 @@ export class ObjectService {
     validateAdtUri(objectUri);
     logger.debug("Getting object metadata", { uri: objectUri });
 
+    // SAP's content negotiation for this resource rejects every vnd.sap.* type
+    // (including the documented application/vnd.sap.adt.core.objectstructure+xml)
+    // with 406 "Zulässige Inhaltstypen:" (empty list) — verified live for both
+    // CLAS and INTF; only a wildcard Accept is actually accepted.
     const xml = await this.client.get<string>(objectUri, {
-      headers: { Accept: "application/vnd.sap.adt.core.objectstructure+xml" },
+      headers: { Accept: "*/*" },
     });
 
     return this.parseObjectMetadata(xml, objectUri);

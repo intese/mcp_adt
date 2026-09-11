@@ -32,14 +32,20 @@ export class TransportService {
     logger.debug("Creating transport request", { description: options.description });
 
     const body = this.buildCreateRequest(options);
-    const responseXml = await this.client.post<string>("/sap/bc/adt/cts/transports", body, {
-      headers: {
-        "Content-Type": "application/vnd.sap.adt.cts.transports+xml",
-        Accept: "application/vnd.sap.adt.cts.transports+xml",
+    const { data: responseXml, headers } = await this.client.postForHeaders<string>(
+      "/sap/bc/adt/cts/transports",
+      body,
+      {
+        headers: {
+          "Content-Type": "application/vnd.sap.adt.cts.transports+xml",
+          Accept: "application/vnd.sap.adt.cts.transports+xml",
+        },
       },
-    });
+    );
 
-    const number = this.extractTransportNumber(responseXml);
+    const number =
+      this.extractTransportNumberFromLocation(headers["location"]) ??
+      this.extractTransportNumber(responseXml);
     if (!number) {
       throw new AdtTransportError("SAP did not return a transport number");
     }
@@ -119,6 +125,12 @@ export class TransportService {
     } catch {
       return [];
     }
+  }
+
+  private extractTransportNumberFromLocation(location: string | undefined): string | null {
+    if (!location) return null;
+    const match = location.match(/[A-Z]{1}[A-Z0-9]{2}K[0-9]{6}/);
+    return match ? match[0] : null;
   }
 
   private extractTransportNumber(responseXml: string): string | null {

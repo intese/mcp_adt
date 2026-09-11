@@ -10,29 +10,30 @@ export class ATCService {
   async runATC(options: ATCRunOptions): Promise<ATCRunResult> {
     logger.debug("Starting ATC run", { objectCount: options.objects.length });
 
+    // SAP expects the client to generate the worklist ID up front and pass it
+    // as a query parameter; the run response body confirms/echoes it (there is
+    // no Location header for this endpoint, despite what older docs assumed).
+    const clientWorklistId = crypto.randomUUID();
     const body = this.buildRunRequest(options);
+
     const runResponseXml = await this.client.post<string>(
-      `/sap/bc/adt/atc/runs?maximumVerdicts=${options.maximumVerdicts ?? 100}`,
+      `/sap/bc/adt/atc/runs?worklistId=${clientWorklistId}&maximumVerdicts=${options.maximumVerdicts ?? 100}`,
       body,
       {
         headers: {
           "Content-Type": "application/vnd.sap.adt.atc.run.request+xml",
-          Accept: "application/vnd.sap.adt.atc.run.result+xml",
+          // SAP's ICF content negotiation rejects the vnd.sap.* run-result
+          // type here with a generic "Accept header missing" error; only a
+          // plain application/xml Accept is actually registered for this run.
+          Accept: "application/xml",
         },
       },
     );
 
-    const worklistId = this.extractWorklistId(runResponseXml);
+    const worklistId = this.extractWorklistId(runResponseXml) ?? clientWorklistId;
     logger.debug("ATC run initiated", { worklistId });
 
-    const worklistXml = await this.client.get<string>(
-      `/sap/bc/adt/atc/worklists/${worklistId}`,
-      {
-        headers: { Accept: "application/vnd.sap.adt.atc.worklist+xml" },
-      },
-    );
-
-    return this.parseWorklistResult(worklistXml, worklistId);
+    return this.getWorklistResult(worklistId);
   }
 
   async getWorklistResult(worklistId: string): Promise<ATCRunResult> {
@@ -40,9 +41,9 @@ export class ATCService {
 
     const xml = await this.client.get<string>(
       `/sap/bc/adt/atc/worklists/${worklistId}`,
-      {
-        headers: { Accept: "application/vnd.sap.adt.atc.worklist+xml" },
-      },
+      // The registered representation for this resource is
+      // application/atc.worklist.v1+xml (no "vnd.sap." prefix).
+      { headers: { Accept: "application/atc.worklist.v1+xml" } },
     );
 
     return this.parseWorklistResult(xml, worklistId);
@@ -52,79 +53,61 @@ export class ATCService {
     const refs = options.objects
       .map(
         (o) =>
-          `        <adtcore:objectReference adtcore:uri="${this.escapeXml(o.uri)}" adtcore:name="${this.escapeXml(o.name)}"/>`,
+          `          <adtcore:objectReference adtcore:uri="${this.escapeXml(o.uri)}" adtcore:name="${this.escapeXml(o.name)}"/>`,
       )
       .join("\n");
 
     return `<?xml version="1.0" encoding="UTF-8"?>
-<atcrun:run xmlns:atcrun="http://www.sap.com/adt/atc/run">
+<atc:run xmlns:atc="http://www.sap.com/adt/atc" maximumVerdicts="${options.maximumVerdicts ?? 100}">
   <objectSets>
-    <atcobjectset:objectSet xmlns:atcobjectset="http://www.sap.com/adt/atc/atcobjectset">
-      <atcobjectset:adtCoreObjectSet>
-        <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+    <objectSet kind="inclusive">
+      <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
 ${refs}
-        </adtcore:objectReferences>
-      </atcobjectset:adtCoreObjectSet>
-    </atcobjectset:objectSet>
+      </adtcore:objectReferences>
+    </objectSet>
   </objectSets>
-</atcrun:run>`;
+</atc:run>`;
   }
 
-  private extractWorklistId(xml: string): string {
-    try {
-      const parsed = parseXml(xml);
-      const run = getNestedValue(parsed, ["atcrun:run"]) as Record<string, unknown> | undefined;
-      if (run) {
-        const id = attr(run, "atcrun:worklistId") || attr(run, "worklistId");
-        if (id) return id;
-      }
-    } catch {
-      // Try regex fallback
-    }
-    const match = xml.match(/worklistId="([^"]+)"/);
-    if (match?.[1]) return match[1];
-    throw new Error("Could not extract ATC worklist ID from response");
+  /** Reads <atcworklist:worklistId> from the run response body (element text, not an attribute). */
+  private extractWorklistId(xml: string): string | null {
+    const parsed = parseXml(xml);
+    const run = getNestedValue(parsed, ["atcworklist:worklistRun"]) as Record<string, unknown> | undefined;
+    const id = run ? extractText(run["atcworklist:worklistId"]) : "";
+    return id || null;
   }
 
   private parseWorklistResult(xml: string, worklistId: string): ATCRunResult {
     const findings: ATCFinding[] = [];
 
-    try {
-      const parsed = parseXml(xml);
-      const worklist = getNestedValue(parsed, ["worklist:worklist"]) as Record<string, unknown> | undefined;
-      const objectSets = getNestedValue(
-        worklist ?? parsed,
-        ["worklist:objectSets", "worklist:objectSet"],
-      ) as unknown;
+    const parsed = parseXml(xml);
+    const worklist = getNestedValue(parsed, ["atcworklist:worklist"]) as Record<string, unknown> | undefined;
 
-      for (const objectSet of ensureArray(objectSets)) {
-        const objects = ensureArray(
-          (objectSet as Record<string, unknown>)["worklist:objects"] as unknown,
+    if (worklist) {
+      const objects = ensureArray(
+        getNestedValue(worklist, ["atcworklist:objects", "atcobject:object"]) as unknown,
+      );
+
+      for (const obj of objects) {
+        const objRecord = obj as Record<string, unknown>;
+        const objectName = attr(objRecord, "adtcore:name");
+        const objectType = attr(objRecord, "adtcore:type");
+        const objectUri = attr(objRecord, "adtcore:uri");
+        const packageName = attr(objRecord, "adtcore:packageName");
+
+        const checkFindings = ensureArray(
+          getNestedValue(objRecord, ["atcobject:findings", "atcfinding:finding"]) as unknown,
         );
 
-        for (const obj of objects) {
-          const objRecord = obj as Record<string, unknown>;
-          const objectName = attr(objRecord, "adtcore:name");
-          const objectType = attr(objRecord, "adtcore:type");
-          const objectUri = attr(objRecord, "adtcore:uri");
-          const packageName = attr(objRecord, "adtcore:packageName");
-
-          const checkFindings = ensureArray(
-            (objRecord["worklist:findings"] as Record<string, unknown>)?.["worklist:finding"] as unknown,
-          );
-
-          for (const finding of checkFindings) {
-            findings.push(this.parseFinding(finding, {
-              objectName,
-              objectType,
-              objectUri,
-              packageName,
-            }));
-          }
+        for (const finding of checkFindings) {
+          findings.push(this.parseFinding(finding, {
+            objectName,
+            objectType,
+            objectUri,
+            packageName,
+          }));
         }
       }
-    } catch {
-      // Return partial results
     }
 
     const byPriority: Record<ATCPriority, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -145,22 +128,26 @@ ${refs}
     context: { objectName: string; objectType: string; objectUri: string; packageName: string },
   ): ATCFinding {
     const n = node as Record<string, unknown>;
-    const priority = parseInt(attr(n, "atcworklist:priority") || attr(n, "priority") || "3", 10) as ATCPriority;
-    const line = parseInt(attr(n, "adtcore:line") || "0", 10);
-    const column = parseInt(attr(n, "adtcore:column") || "0", 10);
+    const priority = parseInt(attr(n, "atcfinding:priority") || "3", 10) as ATCPriority;
+    // Line/column are not separate attributes — they're encoded in the
+    // location URI fragment, e.g. ".../includes/implementations#start=297,0".
+    const location = attr(n, "atcfinding:location");
+    const locationMatch = location.match(/#start=(\d+),(\d+)/);
+    const exemptionApproval = attr(n, "atcfinding:exemptionApproval");
 
     return {
-      id: attr(n, "atcworklist:id") || attr(n, "id") || crypto.randomUUID(),
-      checkId: attr(n, "atcworklist:checkId") || attr(n, "checkId") || "",
-      checkTitle: attr(n, "atcworklist:checkTitle") || attr(n, "checkTitle") || "",
-      messageTitle: attr(n, "atcworklist:messageTitle") || attr(n, "messageTitle") || extractText(n),
+      id: attr(n, "atcfinding:quickfixInfo") || attr(n, "adtcore:uri") || crypto.randomUUID(),
+      checkId: attr(n, "atcfinding:checkId"),
+      checkTitle: attr(n, "atcfinding:checkTitle"),
+      messageTitle: attr(n, "atcfinding:messageTitle"),
       priority: (priority >= 1 && priority <= 4 ? priority : 3) as ATCPriority,
       objectUri: context.objectUri,
       objectName: context.objectName,
       objectType: context.objectType,
       packageName: context.packageName || undefined,
-      line: line > 0 ? line : undefined,
-      column: column > 0 ? column : undefined,
+      line: locationMatch?.[1] ? parseInt(locationMatch[1], 10) : undefined,
+      column: locationMatch?.[2] ? parseInt(locationMatch[2], 10) : undefined,
+      exemptionApproval: exemptionApproval && exemptionApproval !== "-" ? exemptionApproval : undefined,
     };
   }
 
