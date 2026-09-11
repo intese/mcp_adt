@@ -41,12 +41,11 @@ GET {objectUri}
 Accept: */*
 ```
 
-**Verifiziert 2026-09-11 live gegen `ird`** (Klasse `ZCL_MA_EMPLOYEE_IMPORT`, Interface
-`ZIF_MA_EMPLOYEE_IMPORT`): Jeder spezifische `vnd.sap.*`-Content-Type — inkl. des zuvor
-hier dokumentierten `application/vnd.sap.adt.core.objectstructure+xml` — wird von SAP mit
-`406 Not Acceptable` („Zulässige Inhaltstypen:" mit leerer Liste) abgelehnt, für Klassen
-und Interfaces gleichermaßen. Nur `Accept: */*` (bzw. gar kein Accept-Header) liefert
-`200 OK`.
+**Verifiziert 2026-09-11 live gegen ein reales SAP-System** (Klasse und Interface): Jeder
+spezifische `vnd.sap.*`-Content-Type — inkl. des zuvor hier dokumentierten
+`application/vnd.sap.adt.core.objectstructure+xml` — wird von SAP mit `406 Not Acceptable`
+(„Zulässige Inhaltstypen:" mit leerer Liste) abgelehnt, für Klassen und Interfaces
+gleichermaßen. Nur `Accept: */*` (bzw. gar kein Accept-Header) liefert `200 OK`.
 
 ### Quelltext lesen
 
@@ -445,11 +444,11 @@ Accept: application/vnd.sap.adt.repository.informationsystem.objecttypes+xml
 
 ## ATC (ABAP Test Cockpit)
 
-**Verifiziert am 2026-09-11 live gegen SAP-System `ird` (Klasse `ZCL_MA_EMPLOYEE_IMPORT`,
-Paket `Z_SERVICES`).** Die vorherige Version dieses Abschnitts war unvalidierte
-Dokumentation und in mehreren Punkten falsch (falscher XML-Namespace, falsche
-Accept-Header, fälschlich angenommener `Location`-Header) — das war die eigentliche
-Ursache dafür, dass `adt_run_atc` immer mit „Accept header missing" scheiterte.
+**Verifiziert am 2026-09-11 live gegen ein reales SAP-System.** Die vorherige Version
+dieses Abschnitts war unvalidierte Dokumentation und in mehreren Punkten falsch
+(falscher XML-Namespace, falsche Accept-Header, fälschlich angenommener
+`Location`-Header) — das war die eigentliche Ursache dafür, dass `adt_run_atc` immer
+mit „Accept header missing" scheiterte.
 
 ### ATC-Lauf starten
 

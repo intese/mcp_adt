@@ -161,10 +161,10 @@ export const MOCK_SAP_ERROR_XML = `<?xml version="1.0" encoding="utf-8"?>
   <exc:localizedMessage>Object ZCL_NONEXISTENT does not exist</exc:localizedMessage>
 </exc:exception>`;
 
-// Captured from a real SAP ADT ATC run (system "ird", class ZCL_MA_EMPLOYEE_IMPORT),
-// with the object/finding identifiers genericized. This is the actual response shape —
-// docs/adt-endpoints.md and the original ATCService implementation both assumed a
-// different (incorrect) schema before this was verified live.
+// Captured from a real SAP ADT ATC run, with the object/finding identifiers
+// genericized. This is the actual response shape — docs/adt-endpoints.md and the
+// original ATCService implementation both assumed a different (incorrect) schema
+// before this was verified live.
 export const MOCK_ATC_RUN_RESPONSE_XML = `<?xml version="1.0" encoding="utf-8"?>
 <atcworklist:worklistRun xmlns:atcworklist="http://www.sap.com/adt/atc/worklist">
   <atcworklist:worklistId>00000000000000000000000000000000</atcworklist:worklistId>
