@@ -28,9 +28,13 @@ import {
   withCorrNr,
   validateAdtUri,
 } from "../utils/uri.js";
+import type { LockService } from "./LockService.js";
 
 export class ObjectService {
-  constructor(private readonly client: AdtHttpClient) {}
+  constructor(
+    private readonly client: AdtHttpClient,
+    private readonly lockService: LockService,
+  ) {}
 
   // ─── Read ─────────────────────────────────────────────────────────────────
 
@@ -143,7 +147,7 @@ export class ObjectService {
       options.transportNumber,
     );
     const body = this.buildClassXml(options);
-    const location = await this.client.post<string>(uri, body, {
+    await this.client.post<string>(uri, body, {
       headers: {
         "Content-Type": "application/vnd.sap.adt.classes+xml",
         Accept: "application/vnd.sap.adt.classes+xml",
@@ -151,7 +155,38 @@ export class ObjectService {
     });
     const resultUri = classUri(options.name);
     logger.info("Class created", { name: options.name, uri: resultUri });
+
+    if (options.generateTestClass) {
+      const lock = await this.lockService.acquireLock(resultUri);
+      try {
+        await this.createTestClassInclude(options.name, lock.lockHandle, options.transportNumber);
+        logger.info("Test class include created", { name: options.name });
+      } finally {
+        await this.lockService.releaseLock(resultUri, lock.lockHandle);
+      }
+    }
+
     return { uri: resultUri, name: options.name, type: "CLAS/OC" };
+  }
+
+  // SAP only auto-creates CCDEF/CCIMP for a new class; the CCAU test-class
+  // include must be requested explicitly via a follow-up create request
+  // against the class's /includes collection (verified against the
+  // open-source abap-adt-api client's createTestInclude implementation —
+  // pending live confirmation against our own SAP system).
+  private async createTestClassInclude(
+    name: string,
+    lockHandle: string,
+    transportNumber?: string,
+  ): Promise<void> {
+    const uri = withCorrNr(
+      `${classUri(name)}/includes?lockHandle=${encodeURIComponent(lockHandle)}`,
+      transportNumber,
+    );
+    const body = `<?xml version="1.0" encoding="UTF-8"?><class:abapClassInclude xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="dummy" class:includeType="testclasses"/>`;
+    await this.client.post<string>(uri, body, {
+      headers: { "Content-Type": "application/*" },
+    });
   }
 
   async createInterface(options: CreateInterfaceOptions): Promise<AdtObjectReference> {

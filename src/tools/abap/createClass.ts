@@ -34,6 +34,7 @@ export const createClassTool: ToolDefinition<typeof schema> = {
         isAbstract: args.isAbstract,
         visibility: args.visibility,
         instantiation: args.instantiation,
+        generateTestClass: args.generateTestClass,
       });
 
       const result: Record<string, unknown> = { ...ref };
