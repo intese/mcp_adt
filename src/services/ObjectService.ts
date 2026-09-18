@@ -22,6 +22,7 @@ import {
   functionGroupUri,
   functionModuleUri,
   cdsViewUri,
+  behaviorDefinitionUri,
   packageUri,
   sourceUri,
   classSourceUri,
@@ -247,12 +248,12 @@ export class ObjectService {
 
   async createCdsView(options: CreateCdsViewOptions): Promise<AdtObjectReference> {
     const uri = withCorrNr(
-      `/sap/bc/adt/services/datas?packageName=${encodeURIComponent(options.packageName)}`,
+      `/sap/bc/adt/ddic/ddl/sources?packageName=${encodeURIComponent(options.packageName)}`,
       options.transportNumber,
     );
     const body = this.buildCdsViewXml(options);
     await this.client.post<string>(uri, body, {
-      headers: { "Content-Type": "application/vnd.sap.adt.services.datas+xml" },
+      headers: { "Content-Type": "application/*" },
     });
     const resultUri = cdsViewUri(options.name);
     logger.info("CDS view created", { name: options.name });
@@ -274,9 +275,29 @@ export class ObjectService {
         return this.createFunctionGroup(options);
       case "DDLS/DF":
         return this.createCdsView(options);
+      case "BDEF/BDO":
+        return this.createBehaviorDefinition(options);
       default:
         throw new Error(`Unsupported object type for generic creation: ${objectType}`);
     }
+  }
+
+  // Endpoint/namespace unverified against a real system - sourced from
+  // marcellourbani/vscode_abap_remote_fs (BdefCreator.ts), which registers
+  // BDEF/BDO with abap-adt-api's generic object creator (blue:blueSource,
+  // same schema used there for TABL/DT and TABL/DS).
+  async createBehaviorDefinition(options: CreateObjectOptions): Promise<AdtObjectReference> {
+    const uri = withCorrNr(
+      `/sap/bc/adt/bo/behaviordefinitions?packageName=${encodeURIComponent(options.packageName)}`,
+      options.transportNumber,
+    );
+    const body = this.buildBehaviorDefinitionXml(options);
+    await this.client.post<string>(uri, body, {
+      headers: { "Content-Type": "application/*" },
+    });
+    const resultUri = behaviorDefinitionUri(options.name);
+    logger.info("Behavior definition created", { name: options.name });
+    return { uri: resultUri, name: options.name, type: "BDEF/BDO" };
   }
 
   // ─── Delete ───────────────────────────────────────────────────────────────
@@ -300,7 +321,7 @@ export class ObjectService {
   private buildClassXml(options: CreateClassOptions): string {
     const name = options.name.toUpperCase();
     const responsible = (options.responsible ?? this.client.getUsername()).toUpperCase();
-    const lang = options.language ?? "EN";
+    const lang = options.language ?? this.client.getLanguage();
     const pkg = options.packageName.toUpperCase();
     const isFinal = options.isFinal ? "true" : "false";
     const isAbstract = options.isAbstract ? "true" : "false";
@@ -328,7 +349,7 @@ export class ObjectService {
   private buildInterfaceXml(options: CreateInterfaceOptions): string {
     const name = options.name.toUpperCase();
     const pkg = options.packageName.toUpperCase();
-    const lang = options.language ?? "EN";
+    const lang = options.language ?? this.client.getLanguage();
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <intf:abapInterface
@@ -344,7 +365,7 @@ export class ObjectService {
   private buildReportXml(options: CreateReportOptions): string {
     const name = options.name.toUpperCase();
     const pkg = options.packageName.toUpperCase();
-    const lang = options.language ?? "EN";
+    const lang = options.language ?? this.client.getLanguage();
     const type = options.programType ?? "1";
 
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -362,7 +383,7 @@ export class ObjectService {
   private buildFunctionGroupXml(options: CreateFunctionGroupOptions): string {
     const name = options.name.toUpperCase();
     const pkg = options.packageName.toUpperCase();
-    const lang = options.language ?? "EN";
+    const lang = options.language ?? this.client.getLanguage();
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <group:abapFunctionGroup
@@ -390,19 +411,41 @@ export class ObjectService {
   private buildCdsViewXml(options: CreateCdsViewOptions): string {
     const name = options.name.toUpperCase();
     const pkg = options.packageName.toUpperCase();
-    const lang = options.language ?? "EN";
-    const category = options.category ?? "VIEW";
+    const lang = options.language ?? this.client.getLanguage();
 
+    // ddl:ddlSource has no category attribute (unlike the legacy
+    // dataDefinition:abapDataDefinition schema) - entity vs. view vs. abstract
+    // entity is determined by the DDL syntax written via adt_write_object, not
+    // by object-creation metadata.
     return `<?xml version="1.0" encoding="UTF-8"?>
-<dataDefinition:abapDataDefinition
-  xmlns:dataDefinition="http://www.sap.com/adt/services/datas"
+<ddl:ddlSource
+  xmlns:ddl="http://www.sap.com/adt/ddic/ddlsources"
   xmlns:adtcore="http://www.sap.com/adt/core"
   adtcore:description="${this.escapeXml(options.description)}"
   adtcore:language="${lang}"
+  adtcore:masterLanguage="${lang}"
   adtcore:name="${name}"
-  dataDefinition:category="${category}">
+  adtcore:type="DDLS/DF">
   <adtcore:packageRef adtcore:name="${pkg}"/>
-</dataDefinition:abapDataDefinition>`;
+</ddl:ddlSource>`;
+  }
+
+  private buildBehaviorDefinitionXml(options: CreateObjectOptions): string {
+    const name = options.name.toUpperCase();
+    const pkg = options.packageName.toUpperCase();
+    const lang = options.language ?? this.client.getLanguage();
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<blue:blueSource
+  xmlns:blue="http://www.sap.com/wbobj/blue"
+  xmlns:adtcore="http://www.sap.com/adt/core"
+  adtcore:description="${this.escapeXml(options.description)}"
+  adtcore:language="${lang}"
+  adtcore:masterLanguage="${lang}"
+  adtcore:name="${name}"
+  adtcore:type="BDEF/BDO">
+  <adtcore:packageRef adtcore:name="${pkg}"/>
+</blue:blueSource>`;
   }
 
   private buildNodeStructureRequest(

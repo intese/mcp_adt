@@ -70,6 +70,7 @@ function createMockClient(
     }),
     createStatelessClone: jest.fn(),
     getUsername: jest.fn().mockReturnValue("TESTUSER"),
+    getLanguage: jest.fn().mockReturnValue("EN"),
     setSessionType: jest.fn(),
   };
   return mock as unknown as AdtHttpClient;
@@ -390,6 +391,87 @@ describe("ObjectService", () => {
     const calls = mockPost.mock.calls as [string][];
     const unlockCall = calls.find(([path]) => String(path).includes("_action=UNLOCK"));
     expect(unlockCall).toBeDefined();
+  });
+
+  it("createCdsView posts to the ddic/ddl/sources collection, not the legacy services/datas endpoint", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client, new LockService(client));
+
+    const ref = await service.createCdsView({
+      name: "ZI_TEST_VIEW",
+      description: "Test view",
+      packageName: "$TMP",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [path, body, options] = mockPost.mock.calls[0] as [
+      string,
+      string,
+      { headers: Record<string, string> },
+    ];
+    expect(path).toContain("/sap/bc/adt/ddic/ddl/sources?packageName=");
+    expect(path).not.toContain("services/datas");
+    expect(body).toContain("<ddl:ddlSource");
+    expect(body).toContain('adtcore:type="DDLS/DF"');
+    expect(options.headers["Content-Type"]).toBe("application/*");
+    expect(ref.uri).toBe("/sap/bc/adt/ddic/ddl/sources/ZI_TEST_VIEW");
+  });
+
+  it("createCdsView falls back to the client's configured language, not a hardcoded EN (SAP rejects language != masterLanguage of the system)", async () => {
+    const client = createMockClient({});
+    (client as unknown as { getLanguage: ReturnType<typeof jest.fn> }).getLanguage.mockReturnValue(
+      "DE",
+    );
+    const service = new ObjectService(client, new LockService(client));
+
+    await service.createCdsView({
+      name: "ZI_TEST_VIEW",
+      description: "Test view",
+      packageName: "$TMP",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [, body] = mockPost.mock.calls[0] as [string, string];
+    expect(body).toContain('adtcore:language="DE"');
+    expect(body).toContain('adtcore:masterLanguage="DE"');
+  });
+
+  it("createBehaviorDefinition posts to bo/behaviordefinitions with the blue:blueSource schema", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client, new LockService(client));
+
+    const ref = await service.createBehaviorDefinition({
+      name: "ZBP_I_TEST",
+      description: "Test behavior definition",
+      packageName: "$TMP",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [path, body, options] = mockPost.mock.calls[0] as [
+      string,
+      string,
+      { headers: Record<string, string> },
+    ];
+    expect(path).toContain("/sap/bc/adt/bo/behaviordefinitions?packageName=");
+    expect(body).toContain("<blue:blueSource");
+    expect(body).toContain('adtcore:type="BDEF/BDO"');
+    expect(options.headers["Content-Type"]).toBe("application/*");
+    expect(ref.uri).toBe("/sap/bc/adt/bo/behaviordefinitions/ZBP_I_TEST");
+  });
+
+  it("createObject delegates BDEF/BDO to the behavior-definition-specific endpoint", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client, new LockService(client));
+
+    await service.createObject("BDEF/BDO", {
+      name: "ZBP_I_TEST",
+      description: "Test behavior definition",
+      packageName: "$TMP",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [path] = mockPost.mock.calls[0] as [string];
+    expect(path).toContain("/sap/bc/adt/bo/behaviordefinitions");
   });
 });
 
