@@ -168,25 +168,68 @@ x-csrf-token: {token}
 
 ### CDS Datenobjekt (DDLS) anlegen
 
+**Unverifiziert** (2026-09-18, Fix für `BUG_createCdsView_404.md` — der bisher dokumentierte
+Endpunkt `/sap/bc/adt/services/datas` liefert auf modernen Systemen 404; `/sap/bc/adt/ddic/ddl/sources`
+stammt aus der Open-Source-Referenz `marcellourbani/abap-adt-api` (`objectcreator.ts`,
+`CreatableTypes` für `DDLS/DF`) und passt zum Lese-Namensraum (`GET /sap/bc/adt/ddic/ddl/sources/{name}`).
+Noch nicht live gegen ein echtes System bestätigt.):
+
 ```
-POST /sap/bc/adt/services/datas
-Content-Type: application/vnd.sap.adt.services.datas+xml
+POST /sap/bc/adt/ddic/ddl/sources
+Content-Type: application/*
 x-csrf-token: {token}
 ?corrNr={transportNumber}&packageName={package}
 
 Body:
 <?xml version="1.0" encoding="UTF-8"?>
-<dataDefinition:abapDataDefinition
-  xmlns:dataDefinition="http://www.sap.com/adt/services/datas"
+<ddl:ddlSource
+  xmlns:ddl="http://www.sap.com/adt/ddic/ddlsources"
   xmlns:adtcore="http://www.sap.com/adt/core"
   adtcore:description="{description}"
   adtcore:language="{language}"
+  adtcore:masterLanguage="{language}"
   adtcore:name="{name}"
-  adtcore:responsible="{user}"
-  dataDefinition:category="{VIEW|ENTITY|TYPE}">
+  adtcore:type="DDLS/DF">
   <adtcore:packageRef adtcore:name="{package}"/>
-</dataDefinition:abapDataDefinition>
+</ddl:ddlSource>
 ```
+
+`ddl:ddlSource` hat kein `category`-Attribut — VIEW/ENTITY/ABSTRACT ENTITY ergibt sich aus der
+DDL-Syntax, die anschließend per `adt_write_object` in `source/main` geschrieben wird, nicht aus
+Anlage-Metadaten.
+
+### Behavior Definition (BDEF) anlegen
+
+**Unverifiziert** (2026-09-18, Teilfix für den unabhängigen Befund "keine Tool-Unterstützung
+für BDEF/DCLS/Event-Binding" aus `BUG_createCdsView_404.md`): Endpunkt, Namespace und Root-Element
+stammen aus der Open-Source-Referenz `marcellourbani/vscode_abap_remote_fs`
+(`client/src/adt/operations/BdefCreator.ts`, registriert `BDEF/BDO` bei `abap-adt-api`s generischem
+Object-Creator mit demselben `blue:blueSource`-Schema wie `TABL/DT`/`TABL/DS`). Noch nicht live
+gegen ein echtes System bestätigt.
+
+```
+POST /sap/bc/adt/bo/behaviordefinitions
+Content-Type: application/*
+x-csrf-token: {token}
+?corrNr={transportNumber}&packageName={package}
+
+Body:
+<?xml version="1.0" encoding="UTF-8"?>
+<blue:blueSource
+  xmlns:blue="http://www.sap.com/wbobj/blue"
+  xmlns:adtcore="http://www.sap.com/adt/core"
+  adtcore:description="{description}"
+  adtcore:language="{language}"
+  adtcore:masterLanguage="{language}"
+  adtcore:name="{name}"
+  adtcore:type="BDEF/BDO">
+  <adtcore:packageRef adtcore:name="{package}"/>
+</blue:blueSource>
+```
+
+Event Binding (`EVTB`) bleibt weiterhin ohne Tool-Unterstützung — keine verifizierte Quelle
+(weder in `abap-adt-api` noch `vscode_abap_remote_fs` noch SAP Help) für Endpunkt/Schema gefunden.
+Vor Implementierung: ADT-Trace aus Eclipse (New Other... ABAP Event Binding) nötig.
 
 ### Paket anlegen
 
@@ -721,7 +764,8 @@ Accept: text/plain
 | Tabelle | `TABD/DT` | `/sap/bc/adt/ddic/tables/{NAME}` |
 | Datenelement | `DOMA/DE` | `/sap/bc/adt/ddic/dataelements/{NAME}` |
 | Domäne | `DOMA/DO` | `/sap/bc/adt/ddic/domains/{NAME}` |
-| CDS View | `DDLS/DF` | `/sap/bc/adt/services/datas/{NAME}` |
+| CDS View | `DDLS/DF` | `/sap/bc/adt/ddic/ddl/sources/{NAME}` |
+| Behavior Definition | `BDEF/BDO` | `/sap/bc/adt/bo/behaviordefinitions/{NAME}` |
 | Access Control | `DCLS/DL` | `/sap/bc/adt/services/accesscontrols/{NAME}` |
 | Service Definition | `SRVD/SD` | `/sap/bc/adt/services/definitions/{NAME}` |
 | Service Binding | `SRVB/SB` | `/sap/bc/adt/services/bindings/{NAME}` |

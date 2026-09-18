@@ -5,7 +5,7 @@ import { successResult, errorResult } from "../helpers.js";
 
 const schema = z.object({
   objectType: z
-    .enum(["CLAS/OC", "INTF/OI", "PROG/P", "FUGR/F", "DDLS/DF"])
+    .enum(["CLAS/OC", "INTF/OI", "PROG/P", "FUGR/F", "DDLS/DF", "BDEF/BDO"])
     .describe("SAP object type"),
   name: z
     .string()

@@ -39,7 +39,11 @@ export function domainUri(name: string): string {
 }
 
 export function cdsViewUri(name: string): string {
-  return `${ADT_BASE}/services/datas/${encodeURIComponent(name.toUpperCase())}`;
+  return `${ADT_BASE}/ddic/ddl/sources/${encodeURIComponent(name.toUpperCase())}`;
+}
+
+export function behaviorDefinitionUri(name: string): string {
+  return `${ADT_BASE}/bo/behaviordefinitions/${encodeURIComponent(name.toUpperCase())}`;
 }
 
 export function accessControlUri(name: string): string {
