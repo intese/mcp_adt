@@ -3,6 +3,7 @@ import { ActivationService } from "../../src/services/ActivationService.js";
 import { SyntaxService } from "../../src/services/SyntaxService.js";
 import { UnitTestService } from "../../src/services/UnitTestService.js";
 import { ObjectService } from "../../src/services/ObjectService.js";
+import { LockService } from "../../src/services/LockService.js";
 import { ATCService } from "../../src/services/ATCService.js";
 import { TransportService } from "../../src/services/TransportService.js";
 import {
@@ -18,6 +19,7 @@ import {
   MOCK_ATC_WORKLIST_XML,
   MOCK_ATC_WORKLIST_EMPTY_XML,
   MOCK_CLASS_METADATA_XML,
+  MOCK_LOCK_RESULT_XML,
 } from "../mocks/adtResponses.js";
 import type { AdtHttpClient } from "../../src/adt/client.js";
 
@@ -68,6 +70,7 @@ function createMockClient(
     }),
     createStatelessClone: jest.fn(),
     getUsername: jest.fn().mockReturnValue("TESTUSER"),
+    setSessionType: jest.fn(),
   };
   return mock as unknown as AdtHttpClient;
 }
@@ -228,7 +231,7 @@ describe("UnitTestService", () => {
 describe("ObjectService", () => {
   it("defaults adtcore:responsible to the configured user when not supplied", async () => {
     const client = createMockClient({});
-    const service = new ObjectService(client);
+    const service = new ObjectService(client, new LockService(client));
 
     await service.createClass({
       name: "ZCL_TEST",
@@ -244,7 +247,7 @@ describe("ObjectService", () => {
 
   it("honors an explicitly supplied responsible value", async () => {
     const client = createMockClient({});
-    const service = new ObjectService(client);
+    const service = new ObjectService(client, new LockService(client));
 
     await service.createClass({
       name: "ZCL_TEST",
@@ -260,7 +263,7 @@ describe("ObjectService", () => {
 
   it("createObject delegates CLAS/OC to the class-specific endpoint", async () => {
     const client = createMockClient({});
-    const service = new ObjectService(client);
+    const service = new ObjectService(client, new LockService(client));
 
     await service.createObject("CLAS/OC", {
       name: "ZCL_TEST",
@@ -276,7 +279,7 @@ describe("ObjectService", () => {
 
   it("createObject delegates INTF/OI to the interface-specific endpoint", async () => {
     const client = createMockClient({});
-    const service = new ObjectService(client);
+    const service = new ObjectService(client, new LockService(client));
 
     await service.createObject("INTF/OI", {
       name: "ZIF_TEST",
@@ -291,7 +294,7 @@ describe("ObjectService", () => {
 
   it("createObject rejects unsupported object types", async () => {
     const client = createMockClient({});
-    const service = new ObjectService(client);
+    const service = new ObjectService(client, new LockService(client));
 
     await expect(
       service.createObject("XYZ/X", {
@@ -304,7 +307,7 @@ describe("ObjectService", () => {
 
   it("getObjectMetadata requests Accept: */* (SAP rejects every vnd.sap.* type here)", async () => {
     const client = createMockClient({ classes: MOCK_CLASS_METADATA_XML });
-    const service = new ObjectService(client);
+    const service = new ObjectService(client, new LockService(client));
 
     const metadata = await service.getObjectMetadata(
       "/sap/bc/adt/oo/classes/ZCL_TEST_CLASS",
@@ -314,6 +317,79 @@ describe("ObjectService", () => {
     const [, options] = mockGet.mock.calls[0] as [string, { headers: Record<string, string> }];
     expect(options.headers.Accept).toBe("*/*");
     expect(metadata.name).toBe("ZCL_TEST_CLASS");
+  });
+
+  it("does not lock or create a test include when generateTestClass is not set", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client, new LockService(client));
+
+    await service.createClass({
+      name: "ZCL_TEST",
+      description: "Test class",
+      packageName: "$TMP",
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    expect(mockPost.mock.calls).toHaveLength(1);
+  });
+
+  it("generateTestClass: true locks the class, creates the CCAU include, then unlocks", async () => {
+    const client = createMockClient({ "_action=LOCK": MOCK_LOCK_RESULT_XML });
+    const service = new ObjectService(client, new LockService(client));
+
+    await service.createClass({
+      name: "ZCL_TEST",
+      description: "Test class",
+      packageName: "$TMP",
+      generateTestClass: true,
+    });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const calls = mockPost.mock.calls as [string, string, { headers: Record<string, string> }][];
+    expect(calls).toHaveLength(4);
+
+    const [createPath] = calls[0]!;
+    expect(createPath).toContain("/sap/bc/adt/oo/classes?packageName=");
+
+    const [lockPath] = calls[1]!;
+    expect(lockPath).toBe("/sap/bc/adt/oo/classes/ZCL_TEST?_action=LOCK&accessMode=MODIFY");
+
+    const [includePath, includeBody, includeOptions] = calls[2]!;
+    expect(includePath).toBe(
+      "/sap/bc/adt/oo/classes/ZCL_TEST/includes?lockHandle=LOCK_HANDLE_ABC123",
+    );
+    expect(includeBody).toContain('class:includeType="testclasses"');
+    expect(includeOptions.headers["Content-Type"]).toBe("application/*");
+
+    const [unlockPath] = calls[3]!;
+    expect(unlockPath).toBe(
+      "/sap/bc/adt/oo/classes/ZCL_TEST?_action=UNLOCK&lockHandle=LOCK_HANDLE_ABC123",
+    );
+  });
+
+  it("propagates the error and still unlocks when CCAU include creation fails", async () => {
+    const client = createMockClient({ "_action=LOCK": MOCK_LOCK_RESULT_XML });
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    mockPost.mockImplementation(async (path: unknown) => {
+      const p = String(path);
+      if (p.includes("_action=LOCK")) return MOCK_LOCK_RESULT_XML;
+      if (p.includes("/includes?lockHandle")) throw new Error("500 keine inaktive Fassung");
+      return "";
+    });
+    const service = new ObjectService(client, new LockService(client));
+
+    await expect(
+      service.createClass({
+        name: "ZCL_TEST",
+        description: "Test class",
+        packageName: "$TMP",
+        generateTestClass: true,
+      }),
+    ).rejects.toThrow(/keine inaktive Fassung/);
+
+    const calls = mockPost.mock.calls as [string][];
+    const unlockCall = calls.find(([path]) => String(path).includes("_action=UNLOCK"));
+    expect(unlockCall).toBeDefined();
   });
 });
 

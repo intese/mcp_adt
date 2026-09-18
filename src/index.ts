@@ -55,8 +55,9 @@ async function main(): Promise<void> {
   });
 
   // Initialize services
+  const lockService = new LockService(adtClient);
   const services: ToolServices = {
-    objectService: new ObjectService(adtClient),
+    objectService: new ObjectService(adtClient, lockService),
     activationService: new ActivationService(adtClient),
     syntaxService: new SyntaxService(adtClient),
     transportService: new TransportService(adtClient),
@@ -64,7 +65,7 @@ async function main(): Promise<void> {
     searchService: new SearchService(adtClient),
     atcService: new ATCService(adtClient),
     unitTestService: new UnitTestService(adtClient),
-    lockService: new LockService(adtClient),
+    lockService,
     cdsService: new CDSService(adtClient),
     transformationService: new TransformationService(adtClient),
     dependencyService: new DependencyService(adtClient),

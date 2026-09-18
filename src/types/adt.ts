@@ -348,6 +348,7 @@ export interface CreateClassOptions extends CreateObjectOptions {
   isAbstract?: boolean;
   visibility?: "public" | "private" | "protected";
   instantiation?: "public" | "protected" | "private";
+  generateTestClass?: boolean;
 }
 
 export interface CreateInterfaceOptions extends CreateObjectOptions {

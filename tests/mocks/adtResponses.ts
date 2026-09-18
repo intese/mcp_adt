@@ -49,6 +49,18 @@ export const MOCK_LOCK_RESPONSE_XML = `<?xml version="1.0" encoding="utf-8"?>
   <adtlock:lockTime>2024-01-15T10:30:00Z</adtlock:lockTime>
 </adtlock:lock>`;
 
+// Matches the actual shape LockService.parseLockResponse() reads:
+// asx:abap/asx:values/DATA/LOCK_HANDLE (+ CORRNR).
+export const MOCK_LOCK_RESULT_XML = `<?xml version="1.0" encoding="utf-8"?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml">
+  <asx:values>
+    <DATA>
+      <LOCK_HANDLE>LOCK_HANDLE_ABC123</LOCK_HANDLE>
+      <CORRNR>TR12345</CORRNR>
+    </DATA>
+  </asx:values>
+</asx:abap>`;
+
 export const MOCK_ACTIVATION_SUCCESS_XML = `<?xml version="1.0" encoding="utf-8"?>
 <chkl:messages xmlns:chkl="http://www.sap.com/adt/activation">
 </chkl:messages>`;
