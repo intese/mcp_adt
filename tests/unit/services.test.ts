@@ -17,6 +17,7 @@ import {
   MOCK_UNIT_TEST_EMPTY_XML,
   MOCK_ATC_RUN_RESPONSE_XML,
   MOCK_ATC_WORKLIST_XML,
+  MOCK_ATC_WORKLIST_OTHER_OBJECT_XML,
   MOCK_ATC_WORKLIST_EMPTY_XML,
   MOCK_CLASS_METADATA_XML,
   MOCK_LOCK_RESULT_XML,
@@ -525,6 +526,22 @@ describe("ATCService", () => {
     expect(body).toContain('xmlns:atc="http://www.sap.com/adt/atc"');
     expect(body).toContain('<objectSet kind="inclusive">');
   });
+
+  it("filters out findings for objects that were not part of the request", async () => {
+    const client = createMockClient({
+      "atc/runs": MOCK_ATC_RUN_RESPONSE_XML,
+      "atc/worklists": MOCK_ATC_WORKLIST_OTHER_OBJECT_XML,
+    });
+    const service = new ATCService(client);
+
+    const result = await service.runATC({
+      objects: [{ uri: "/sap/bc/adt/oo/classes/zcl_test_class", name: "ZCL_TEST_CLASS" }],
+    });
+
+    expect(result.totalFindings).toBe(1);
+    expect(result.findings.every((f) => f.objectName === "ZCL_TEST_CLASS")).toBe(true);
+    expect(result.byPriority[2]).toBe(0);
+  });
 });
 
 describe("TransportService", () => {
@@ -556,5 +573,16 @@ describe("TransportService", () => {
     const number = await service.createTransport({ description: "Test transport" });
 
     expect(number).toBe("DEVK900456");
+  });
+
+  it("requests the generic AS-ABAP XML type when listing transports", async () => {
+    const client = createMockClient({});
+    const service = new TransportService(client);
+
+    await service.listTransports();
+
+    const mockGet = (client as unknown as { get: ReturnType<typeof jest.fn> }).get;
+    const [, options] = mockGet.mock.calls[0] as [string, { headers: Record<string, string> }];
+    expect(options.headers.Accept).toBe("application/vnd.sap.as+xml");
   });
 });

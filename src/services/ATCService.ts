@@ -33,7 +33,32 @@ export class ATCService {
     const worklistId = this.extractWorklistId(runResponseXml) ?? clientWorklistId;
     logger.debug("ATC run initiated", { worklistId });
 
-    return this.getWorklistResult(worklistId);
+    const result = await this.getWorklistResult(worklistId);
+    return this.restrictToRequestedObjects(result, options.objects);
+  }
+
+  /**
+   * SAP sometimes returns a worklist that also carries findings for other
+   * objects of the same package (observed as a server-side worklist/cache
+   * artifact, not reproducible on every call) even though the run request
+   * only referenced a single object. Filter defensively so the tool's
+   * contract (findings only for the requested objects) always holds.
+   */
+  private restrictToRequestedObjects(
+    result: ATCRunResult,
+    requestedObjects: ATCRunOptions["objects"],
+  ): ATCRunResult {
+    const requestedNames = new Set(requestedObjects.map((o) => o.name.toUpperCase()));
+    const findings = result.findings.filter((f) =>
+      requestedNames.has(f.objectName.toUpperCase()),
+    );
+
+    const byPriority: Record<ATCPriority, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const f of findings) {
+      byPriority[f.priority] = (byPriority[f.priority] ?? 0) + 1;
+    }
+
+    return { ...result, findings, totalFindings: findings.length, byPriority };
   }
 
   async getWorklistResult(worklistId: string): Promise<ATCRunResult> {

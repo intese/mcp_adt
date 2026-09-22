@@ -200,12 +200,16 @@ Anlage-Metadaten.
 
 ### Behavior Definition (BDEF) anlegen
 
-**Unverifiziert** (2026-09-18, Teilfix für den unabhängigen Befund "keine Tool-Unterstützung
-für BDEF/DCLS/Event-Binding" aus `BUG_createCdsView_404.md`): Endpunkt, Namespace und Root-Element
-stammen aus der Open-Source-Referenz `marcellourbani/vscode_abap_remote_fs`
+**Anlegen funktioniert, Aktivierung defekt** (siehe `BUG_createBehaviorDefinition_activation.md`
+für den vollständigen Befund): Endpunkt, Namespace und Root-Element stammen aus der
+Open-Source-Referenz `marcellourbani/vscode_abap_remote_fs`
 (`client/src/adt/operations/BdefCreator.ts`, registriert `BDEF/BDO` bei `abap-adt-api`s generischem
-Object-Creator mit demselben `blue:blueSource`-Schema wie `TABL/DT`/`TABL/DS`). Noch nicht live
-gegen ein echtes System bestätigt.
+Object-Creator mit demselben `blue:blueSource`-Schema wie `TABL/DT`/`TABL/DS`). Live gegen
+ein reales SAP-System verifiziert: `POST` (Anlegen) und `adt_write_object` auf `source/main`
+funktionieren, aber
+`adt_activate_object` schlägt mit "Der Typ ist unbekannt" auf die BDEF selbst fehl — vermutlich
+fehlt dem generischen `blue:blueSource`-Schema eine Kennzeichnung, die der RAP-Behavior-Aktivator
+erwartet. Vor einer Korrektur: ADT-Trace aus Eclipse nötig, nicht raten.
 
 ```
 POST /sap/bc/adt/bo/behaviordefinitions
@@ -429,8 +433,13 @@ GET /sap/bc/adt/cts/transports
   ?user={username}
   &status=D
   &target={targetSystem}
-Accept: application/vnd.sap.adt.cts.transports+xml
+Accept: application/vnd.sap.as+xml
 ```
+
+**Wichtig:** Für dieses GET-Resource ist nur der generische AS-ABAP-XML-Content-Type
+registriert. `application/vnd.sap.adt.cts.transports+xml` (naheliegend, da es als
+Content-Type beim POST funktioniert) liefert hier `406 ADT_NOT_ACCEPTABLE`
+("Zulässige Inhaltstypen: application/vnd.sap.as+xml").
 
 ### Auftrag anlegen
 
