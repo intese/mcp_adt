@@ -230,6 +230,54 @@ export const MOCK_ATC_WORKLIST_XML = `<?xml version="1.0" encoding="utf-8"?>
   <atcworklist:infos/>
 </atcworklist:worklist>`;
 
+export const MOCK_ATC_WORKLIST_OTHER_OBJECT_XML = `<?xml version="1.0" encoding="utf-8"?>
+<atcworklist:worklist atcworklist:id="00000000000000000000000000000000"
+  atcworklist:usedObjectSet="99999999999999999999999999999999"
+  atcworklist:objectSetIsComplete="true"
+  xmlns:atcworklist="http://www.sap.com/adt/atc/worklist">
+  <atcworklist:objectSets>
+    <atcworklist:objectSet atcworklist:name="00000000000000000000000000000000" atcworklist:title="Alle Objekte" atcworklist:kind="ALL"/>
+    <atcworklist:objectSet atcworklist:name="99999999999999999999999999999999" atcworklist:title="Letzter Prüflauf" atcworklist:kind="LAST_RUN"/>
+  </atcworklist:objectSets>
+  <atcworklist:objects>
+    <atcobject:object adtcore:uri="/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_TEST_CLASS"
+      adtcore:type="CLAS" adtcore:name="ZCL_TEST_CLASS" adtcore:packageName="ZTESTPKG"
+      atcobject:author="TESTUSER"
+      xmlns:atcobject="http://www.sap.com/adt/atc/object" xmlns:adtcore="http://www.sap.com/adt/core">
+      <atcobject:findings>
+        <atcfinding:finding adtcore:uri="/sap/bc/adt/atc/findings/itemid/ABC123/index/116"
+          atcfinding:location="/sap/bc/adt/oo/classes/zcl_test_class/includes/testclasses#start=34,0"
+          atcfinding:processor="TESTUSER" atcfinding:lastChangedBy="TESTUSER"
+          atcfinding:priority="3" atcfinding:checkId="CHECK123"
+          atcfinding:checkTitle="Erweiterte Programmprüfung (SLIN)"
+          atcfinding:messageId="1700"
+          atcfinding:messageTitle="Zeichenketten ohne Textelement werden nicht übersetzt"
+          atcfinding:exemptionApproval="-" atcfinding:exemptionKind="" atcfinding:checksum="927288306"
+          atcfinding:remarkText="" atcfinding:remarkLink="" atcfinding:quickfixInfo="atc:ABC123,116"
+          xmlns:atcfinding="http://www.sap.com/adt/atc/finding"/>
+      </atcobject:findings>
+    </atcobject:object>
+    <atcobject:object adtcore:uri="/sap/bc/adt/atc/objects/R3TR/FUGR/ZFG_OTHER_OBJECT"
+      adtcore:type="FUGR" adtcore:name="ZFG_OTHER_OBJECT" adtcore:packageName="ZTESTPKG"
+      atcobject:author="TESTUSER"
+      xmlns:atcobject="http://www.sap.com/adt/atc/object" xmlns:adtcore="http://www.sap.com/adt/core">
+      <atcobject:findings>
+        <atcfinding:finding adtcore:uri="/sap/bc/adt/atc/findings/itemid/XYZ999/index/1"
+          atcfinding:location="/sap/bc/adt/functions/groups/zfg_other_object#start=10,0"
+          atcfinding:processor="TESTUSER" atcfinding:lastChangedBy="TESTUSER"
+          atcfinding:priority="2" atcfinding:checkId="CHECK999"
+          atcfinding:checkTitle="Andere Prüfung"
+          atcfinding:messageId="9999"
+          atcfinding:messageTitle="Finding auf nicht angefragtem Objekt"
+          atcfinding:exemptionApproval="-" atcfinding:exemptionKind="" atcfinding:checksum="1"
+          atcfinding:remarkText="" atcfinding:remarkLink="" atcfinding:quickfixInfo="atc:XYZ999,1"
+          xmlns:atcfinding="http://www.sap.com/adt/atc/finding"/>
+      </atcobject:findings>
+    </atcobject:object>
+  </atcworklist:objects>
+  <atcworklist:infos/>
+</atcworklist:worklist>`;
+
 export const MOCK_ATC_WORKLIST_EMPTY_XML = `<?xml version="1.0" encoding="utf-8"?>
 <atcworklist:worklist atcworklist:id="00000000000000000000000000000000"
   atcworklist:usedObjectSet="00000000000000000000000000000000"

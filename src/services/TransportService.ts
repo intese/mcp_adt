@@ -20,9 +20,13 @@ export class TransportService {
     };
     if (user) params["user"] = user;
 
+    // SAP's ICF content negotiation rejects the dedicated cts.transports
+    // media type for this GET resource ("Zulässige Inhaltstypen:
+    // application/vnd.sap.as+xml") — only the generic AS-ABAP XML type is
+    // actually registered here, even though it works as Content-Type for POST.
     const xml = await this.client.get<string>("/sap/bc/adt/cts/transports", {
       params,
-      headers: { Accept: "application/vnd.sap.adt.cts.transports+xml" },
+      headers: { Accept: "application/vnd.sap.as+xml" },
     });
 
     return this.parseTransportList(xml);

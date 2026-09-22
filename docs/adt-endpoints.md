@@ -433,8 +433,13 @@ GET /sap/bc/adt/cts/transports
   ?user={username}
   &status=D
   &target={targetSystem}
-Accept: application/vnd.sap.adt.cts.transports+xml
+Accept: application/vnd.sap.as+xml
 ```
+
+**Wichtig:** Für dieses GET-Resource ist nur der generische AS-ABAP-XML-Content-Type
+registriert. `application/vnd.sap.adt.cts.transports+xml` (naheliegend, da es als
+Content-Type beim POST funktioniert) liefert hier `406 ADT_NOT_ACCEPTABLE`
+("Zulässige Inhaltstypen: application/vnd.sap.as+xml").
 
 ### Auftrag anlegen
 
