@@ -33,16 +33,26 @@ export class TransportService {
   }
 
   async createTransport(options: CreateTransportOptions): Promise<string> {
-    logger.debug("Creating transport request", { description: options.description });
+    logger.debug("Creating transport request", {
+      description: options.description,
+      packageName: options.packageName,
+    });
 
     const body = this.buildCreateRequest(options);
+    // SAP has no ABAP data type registered for the "obvious"
+    // application/vnd.sap.adt.cts.transports+xml content type on this
+    // resource ("Kein Datentyp in Content-Typ ... gefunden") — it expects
+    // the generic AS-ABAP XML envelope with an explicit dataname identifying
+    // the RFC structure to deserialize into, same pattern as the /transportchecks
+    // endpoint.
     const { data: responseXml, headers } = await this.client.postForHeaders<string>(
       "/sap/bc/adt/cts/transports",
       body,
       {
         headers: {
-          "Content-Type": "application/vnd.sap.adt.cts.transports+xml",
-          Accept: "application/vnd.sap.adt.cts.transports+xml",
+          "Content-Type":
+            "application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.CreateCorrectionRequest.v1",
+          Accept: "application/vnd.sap.as+xml",
         },
       },
     );
@@ -90,19 +100,25 @@ export class TransportService {
   }
 
   private buildCreateRequest(options: CreateTransportOptions): string {
-    const type = options.type ?? "Workbench";
+    const category = options.type === "Customizing" ? "W" : "K";
     const target = options.targetSystem
-      ? `<tm:target>${this.escapeXml(options.targetSystem)}</tm:target>`
+      ? `<TARGET>${this.escapeXml(options.targetSystem)}</TARGET>`
       : "";
+    const description = this.escapeXml(options.description);
+    const devClass = this.escapeXml(options.packageName);
 
     return `<?xml version="1.0" encoding="UTF-8"?>
-<tm:request xmlns:tm="http://www.sap.com/adt/cts/transports">
-  <tm:attributes>
-    <tm:category>${type}</tm:category>
-    ${target}
-    <tm:description>${this.escapeXml(options.description)}</tm:description>
-  </tm:attributes>
-</tm:request>`;
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values>
+    <DATA>
+      <CATEGORY>${category}</CATEGORY>
+      ${target}
+      <REQUEST_TEXT>${description}</REQUEST_TEXT>
+      <DESCRIPTION>${description}</DESCRIPTION>
+      <DEVCLASS>${devClass}</DEVCLASS>
+    </DATA>
+  </asx:values>
+</asx:abap>`;
   }
 
   private parseTransportList(xml: string): AdtTransportRequest[] {
@@ -140,6 +156,13 @@ export class TransportService {
   private extractTransportNumber(responseXml: string): string | null {
     try {
       const parsed = parseXml(responseXml);
+      const asxData = getNestedValue(parsed, ["asx:abap", "asx:values", "DATA"]) as
+        | Record<string, unknown>
+        | undefined;
+      if (asxData) {
+        const num = extractText(asxData["TRKORR"]);
+        if (num) return num;
+      }
       const root = getNestedValue(parsed, ["tm:request"]) as Record<string, unknown> | undefined;
       if (root) {
         const num = attr(root, "tm:number") || attr(root, "number");

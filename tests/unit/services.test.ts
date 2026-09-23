@@ -550,29 +550,69 @@ describe("TransportService", () => {
     (client as unknown as { postForHeaders: unknown }).postForHeaders = jest
       .fn()
       .mockImplementation(async () => ({
-        data: '<tm:request xmlns:tm="http://www.sap.com/adt/cts/transports"/>',
+        data: '<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA/></asx:values></asx:abap>',
         headers: { location: "/sap/bc/adt/cts/transportrequests/DEVK900123" },
       }));
     const service = new TransportService(client);
 
-    const number = await service.createTransport({ description: "Test transport" });
+    const number = await service.createTransport({
+      description: "Test transport",
+      packageName: "ZTEST",
+    });
 
     expect(number).toBe("DEVK900123");
   });
 
-  it("falls back to parsing the body when no Location header is present", async () => {
+  it("falls back to parsing the ASX response body when no Location header is present", async () => {
     const client = createMockClient({});
     (client as unknown as { postForHeaders: unknown }).postForHeaders = jest
       .fn()
       .mockImplementation(async () => ({
-        data: '<tm:request xmlns:tm="http://www.sap.com/adt/cts/transports" tm:number="DEVK900456"/>',
+        data: '<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TRKORR>DEVK900456</TRKORR></DATA></asx:values></asx:abap>',
         headers: {},
       }));
     const service = new TransportService(client);
 
-    const number = await service.createTransport({ description: "Test transport" });
+    const number = await service.createTransport({
+      description: "Test transport",
+      packageName: "ZTEST",
+    });
 
     expect(number).toBe("DEVK900456");
+  });
+
+  it("sends the AS-ABAP envelope with the CreateCorrectionRequest dataname when creating a transport", async () => {
+    const client = createMockClient({});
+    (client as unknown as { postForHeaders: unknown }).postForHeaders = jest
+      .fn()
+      .mockImplementation(async () => ({
+        data: '<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><TRKORR>DEVK900789</TRKORR></DATA></asx:values></asx:abap>',
+        headers: {},
+      }));
+    const service = new TransportService(client);
+
+    await service.createTransport({
+      description: "Test transport",
+      type: "Customizing",
+      packageName: "ZTEST",
+    });
+
+    const mockPostForHeaders = (
+      client as unknown as { postForHeaders: ReturnType<typeof jest.fn> }
+    ).postForHeaders;
+    const [, body, options] = mockPostForHeaders.mock.calls[0] as [
+      string,
+      string,
+      { headers: Record<string, string> },
+    ];
+    expect(options.headers["Content-Type"]).toBe(
+      "application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.CreateCorrectionRequest.v1",
+    );
+    expect(options.headers.Accept).toBe("application/vnd.sap.as+xml");
+    expect(body).toContain('xmlns:asx="http://www.sap.com/abapxml"');
+    expect(body).toContain("<CATEGORY>W</CATEGORY>");
+    expect(body).toContain("<DEVCLASS>ZTEST</DEVCLASS>");
+    expect(body).toContain("<REQUEST_TEXT>Test transport</REQUEST_TEXT>");
   });
 
   it("requests the generic AS-ABAP XML type when listing transports", async () => {
