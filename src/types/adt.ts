@@ -428,3 +428,25 @@ export interface AdtCategoryInfo {
   label: string;
   order: number;
 }
+
+// ─── SQL Query (Data Preview, read-only) ─────────────────────────────────────
+
+export interface TableColumnMetadata {
+  name: string;
+  type: string;
+  length?: string;
+  keyAttribute: boolean;
+  description?: string;
+}
+
+export interface TableDataResult {
+  totalRows: number;
+  columns: TableColumnMetadata[];
+  rows: Record<string, string>[];
+  queryExecutionTime?: number;
+}
+
+export interface RunSqlQueryOptions {
+  sql: string;
+  maxRows?: number;
+}

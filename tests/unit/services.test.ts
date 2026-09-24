@@ -6,6 +6,7 @@ import { ObjectService } from "../../src/services/ObjectService.js";
 import { LockService } from "../../src/services/LockService.js";
 import { ATCService } from "../../src/services/ATCService.js";
 import { TransportService } from "../../src/services/TransportService.js";
+import { TableService } from "../../src/services/TableService.js";
 import { PackageService } from "../../src/services/PackageService.js";
 import {
   MOCK_ACTIVATION_SUCCESS_XML,
@@ -22,6 +23,8 @@ import {
   MOCK_ATC_WORKLIST_EMPTY_XML,
   MOCK_CLASS_METADATA_XML,
   MOCK_LOCK_RESULT_XML,
+  MOCK_TABLE_QUERY_XML,
+  MOCK_TABLE_QUERY_EMPTY_XML,
 } from "../mocks/adtResponses.js";
 import type { AdtHttpClient } from "../../src/adt/client.js";
 
@@ -585,6 +588,93 @@ describe("TransportService", () => {
     const mockGet = (client as unknown as { get: ReturnType<typeof jest.fn> }).get;
     const [, options] = mockGet.mock.calls[0] as [string, { headers: Record<string, string> }];
     expect(options.headers.Accept).toBe("application/vnd.sap.as+xml");
+  });
+});
+
+describe("TableService", () => {
+  it("transposes column-oriented data preview XML into row objects", async () => {
+    const client = createMockClient({ freestyle: MOCK_TABLE_QUERY_XML });
+    const service = new TableService(client);
+
+    const result = await service.runSqlQuery({ sql: "SELECT matnr, maktx FROM makt" });
+
+    expect(result.totalRows).toBe(2);
+    expect(result.queryExecutionTime).toBe(12.5);
+    expect(result.columns.map((c) => c.name)).toEqual(["MATNR", "MAKTX"]);
+    expect(result.columns[0]?.keyAttribute).toBe(true);
+    expect(result.rows).toEqual([
+      { MATNR: "100000", MAKTX: "Schraube M8" },
+      { MATNR: "100001", MAKTX: "Mutter M8" },
+    ]);
+  });
+
+  it("returns an empty row set for a query with no matching rows", async () => {
+    const client = createMockClient({ freestyle: MOCK_TABLE_QUERY_EMPTY_XML });
+    const service = new TableService(client);
+
+    const result = await service.runSqlQuery({ sql: "SELECT matnr FROM makt WHERE matnr = 'X'" });
+
+    expect(result.totalRows).toBe(0);
+    expect(result.rows).toEqual([]);
+    expect(result.columns).toHaveLength(1);
+  });
+
+  it("returns a safe empty result on malformed XML instead of throwing", async () => {
+    const client = createMockClient({ freestyle: "not xml at all {{{" });
+    const service = new TableService(client);
+
+    const result = await service.runSqlQuery({ sql: "SELECT * FROM makt" });
+
+    expect(result).toEqual({ totalRows: 0, columns: [], rows: [] });
+  });
+
+  it("rejects non-SELECT statements before sending the request", async () => {
+    const client = createMockClient({});
+    const service = new TableService(client);
+
+    await expect(service.runSqlQuery({ sql: "DELETE FROM makt" })).rejects.toThrow(
+      "Only SELECT statements are allowed",
+    );
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("rejects SQL containing a semicolon", async () => {
+    const client = createMockClient({});
+    const service = new TableService(client);
+
+    await expect(
+      service.runSqlQuery({ sql: "SELECT * FROM makt; DROP TABLE makt" }),
+    ).rejects.toThrow("Multiple statements are not allowed");
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("accepts a lowercase select with leading whitespace", async () => {
+    const client = createMockClient({ freestyle: MOCK_TABLE_QUERY_XML });
+    const service = new TableService(client);
+
+    const result = await service.runSqlQuery({ sql: "  select matnr, maktx from makt" });
+
+    expect(result.rows).toHaveLength(2);
+  });
+
+  it("sends rowNumber as a query param, defaulting to 100 when maxRows is omitted", async () => {
+    const client = createMockClient({ freestyle: MOCK_TABLE_QUERY_XML });
+    const service = new TableService(client);
+
+    await service.runSqlQuery({ sql: "SELECT matnr FROM makt" });
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [path, body, options] = mockPost.mock.calls[0] as [
+      string,
+      string,
+      { params: Record<string, unknown>; headers: Record<string, string> },
+    ];
+    expect(path).toBe("/sap/bc/adt/datapreview/freestyle");
+    expect(body).toBe("SELECT matnr FROM makt");
+    expect(options.params.rowNumber).toBe(100);
+    expect(options.headers["Content-Type"]).toBe("text/plain");
   });
 });
 

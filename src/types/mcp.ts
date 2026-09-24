@@ -15,6 +15,7 @@ export interface ToolServices {
   cdsService: import("../services/CDSService.js").CDSService;
   transformationService: import("../services/TransformationService.js").TransformationService;
   dependencyService: import("../services/DependencyService.js").DependencyService;
+  tableService: import("../services/TableService.js").TableService;
 }
 
 export interface McpToolResult {

@@ -69,6 +69,9 @@ import { validateXmlTool } from "./transformations/validateXml.js";
 import { analyzeXmlSchemaTool } from "./transformations/analyzeSchema.js";
 import { compareXmlStructuresTool } from "./transformations/compareXml.js";
 
+// Table Data
+import { runSqlQueryTool } from "./table/query.js";
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function asTool(t: ToolDefinition<any>): AnyToolDefinition {
   return t as AnyToolDefinition;
@@ -143,6 +146,9 @@ export const ALL_TOOLS: AnyToolDefinition[] = [
   asTool(validateXmlTool),
   asTool(analyzeXmlSchemaTool),
   asTool(compareXmlStructuresTool),
+
+  // Table Data
+  asTool(runSqlQueryTool),
 ];
 
 export const TOOL_MAP = new Map<string, AnyToolDefinition>(

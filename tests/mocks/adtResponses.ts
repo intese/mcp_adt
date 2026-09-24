@@ -289,3 +289,27 @@ export const MOCK_ATC_WORKLIST_EMPTY_XML = `<?xml version="1.0" encoding="utf-8"
   <atcworklist:objects/>
   <atcworklist:infos/>
 </atcworklist:worklist>`;
+
+export const MOCK_TABLE_QUERY_XML = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>2</dataPreview:totalRows>
+  <dataPreview:queryExecutionTime>12.5</dataPreview:queryExecutionTime>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="MATNR" dataPreview:type="C" dataPreview:keyAttribute="true" dataPreview:description="Material" dataPreview:length="18"/>
+    <dataPreview:dataSet><dataPreview:data>100000</dataPreview:data><dataPreview:data>100001</dataPreview:data></dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="MAKTX" dataPreview:type="C" dataPreview:keyAttribute="false" dataPreview:description="Materialkurztext" dataPreview:length="40"/>
+    <dataPreview:dataSet><dataPreview:data>Schraube M8</dataPreview:data><dataPreview:data>Mutter M8</dataPreview:data></dataPreview:dataSet>
+  </dataPreview:columns>
+</dataPreview:tableData>`;
+
+export const MOCK_TABLE_QUERY_EMPTY_XML = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>0</dataPreview:totalRows>
+  <dataPreview:queryExecutionTime>3.1</dataPreview:queryExecutionTime>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="MATNR" dataPreview:type="C" dataPreview:keyAttribute="true" dataPreview:description="Material" dataPreview:length="18"/>
+    <dataPreview:dataSet/>
+  </dataPreview:columns>
+</dataPreview:tableData>`;
