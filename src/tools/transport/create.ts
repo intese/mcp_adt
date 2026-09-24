@@ -1,9 +1,13 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../../types/index.js";
+import { PackageNameSchema } from "../../types/index.js";
 import { successResult, errorResult } from "../helpers.js";
 
 const schema = z.object({
   description: z.string().min(1).max(60).describe("Transport description"),
+  packageName: PackageNameSchema.describe(
+    "Development package the transport belongs to (SAP requires this — rejects the request with 'Geben Sie ein Paket an' otherwise)",
+  ),
   type: z
     .enum(["Workbench", "Customizing"])
     .default("Workbench")
@@ -21,6 +25,7 @@ export const createTransportTool: ToolDefinition<typeof schema> = {
     try {
       const number = await services.transportService.createTransport({
         description: args.description,
+        packageName: args.packageName,
         type: args.type,
         targetSystem: args.targetSystem,
       });

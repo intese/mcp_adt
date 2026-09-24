@@ -445,24 +445,46 @@ Content-Type beim POST funktioniert) liefert hier `406 ADT_NOT_ACCEPTABLE`
 
 ### Auftrag anlegen
 
+**Wichtig:** `application/vnd.sap.adt.cts.transports+xml` als Content-Type für den
+POST-Body ist **falsch** — SAP kennt dafür keinen registrierten ABAP-Datentyp und
+antwortet mit `ADT_UNKNOWN_ERROR`: „Kein Datentyp in Content-Typ
+'application/vnd.sap.adt.cts.transports+xml' gefunden". Dieses Resource erwartet
+stattdessen die generische AS-ABAP-XML-Hülle (`asx:abap`/`asx:values`/`DATA`) mit
+explizitem `dataname`, der die zu deserialisierende RFC-Struktur benennt — analog zu
+`/sap/bc/adt/cts/transportchecks`. Bestätigt durch eine unabhängige Implementierung
+(`Hochfrequenz/adtler`, Go), dort als "Verified: 2026-03-23 gegen ein SAP S/4HANA
+On-Premise-System" kommentiert.
+
 ```
 POST /sap/bc/adt/cts/transports
-Content-Type: application/vnd.sap.adt.cts.transports+xml
+Content-Type: application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.CreateCorrectionRequest.v1
+Accept: application/vnd.sap.as+xml
 x-csrf-token: {token}
 
 Body:
 <?xml version="1.0" encoding="UTF-8"?>
-<tm:request xmlns:tm="http://www.sap.com/adt/cts/transports">
-  <tm:attributes>
-    <tm:category>Workbench</tm:category>
-    <tm:target>{system}</tm:target>
-    <tm:description>{description}</tm:description>
-  </tm:attributes>
-</tm:request>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values>
+    <DATA>
+      <CATEGORY>K</CATEGORY>
+      <TARGET>{system}</TARGET>
+      <REQUEST_TEXT>{description}</REQUEST_TEXT>
+      <DESCRIPTION>{description}</DESCRIPTION>
+      <DEVCLASS>{package}</DEVCLASS>
+    </DATA>
+  </asx:values>
+</asx:abap>
 ```
 
-Response: `Location`-Header enthält URI des neuen Auftrags.
-Transportnummer aus URI extrahieren: letztes Pfadsegment.
+`CATEGORY` ist der einbuchstabige CTS-Request-Typ, nicht das ausgeschriebene Wort:
+`K` = Workbench Request, `W` = Customizing Request. `TARGET` ist optional (leer =
+lokales System). **`DEVCLASS` (Paket) ist zwingend** — ohne dieses Feld antwortet
+SAP mit `500 ADT_SERVER_ERROR`: „Geben Sie ein Paket an" (live verifiziert, 2026-09-23,
+Projekt `Ireks_IRD_SEPA`, System `ird`).
+
+Response-Body ist dieselbe `asx:abap`-Hülle mit der neuen Transportnummer in
+`DATA/TRKORR`. Ein `Location`-Header wird laut Referenzimplementierung nicht
+verlässlich gesendet — Transportnummer primär aus dem Body extrahieren.
 
 ### Auftrag freigeben
 

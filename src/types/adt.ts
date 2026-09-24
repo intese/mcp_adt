@@ -163,6 +163,7 @@ export interface CreateTransportOptions {
   description: string;
   type?: "Workbench" | "Customizing";
   targetSystem?: string;
+  packageName: string;
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
