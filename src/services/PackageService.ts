@@ -59,8 +59,7 @@ export class PackageService {
           maxResults: 500,
         },
         headers: {
-          Accept:
-            "application/vnd.sap.adt.repository.informationsystem.searchresults+xml",
+          Accept: "application/xml",
         },
       },
     );
