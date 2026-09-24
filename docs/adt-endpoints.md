@@ -406,8 +406,10 @@ GET /sap/bc/adt/repository/informationsystem/search
   &query={suchbegriff*}
   &maxResults={n}
   &objectType={PROG%2FP|CLAS%2FOC|...}
-Accept: application/vnd.sap.adt.repository.informationsystem.searchresults+xml
+Accept: application/xml
 ```
+
+**Content-Negotiation-Hinweis:** Der `vnd.sap.adt.repository.informationsystem.searchresults+xml`-Content-Type (früherer Stand dieser Doku) wird von SAP mit `406 ADT_NOT_ACCEPTABLE` abgelehnt ("Zulässige Inhaltstypen: application/xml") — dasselbe Muster wie bei `adt_get_object_metadata`/`adt_list_transport_requests`. `SearchService.searchObjects()` nutzt bereits korrekt `application/xml`; `PackageService.getPackageContent()` teilt sich denselben Endpunkt und wurde entsprechend angepasst (auf einem realen SAP-System reproduziert).
 
 ### Suchantworte
 
@@ -781,6 +783,8 @@ Accept: text/plain
 | Messageklasse | `MSAG/E` | `/sap/bc/adt/ddic/messageClasses/{NAME}` |
 | Simple Transformation | `XSLT/VT` | `/sap/bc/adt/programs/transforms/{NAME}` |
 | XSLT-Programm | `XSLT/XT` | `/sap/bc/adt/programs/transforms/{NAME}` |
+
+**Erzeugung (`adt_create_st`/`adt_create_xslt`) unverifiziert:** `TransformationService.createSimpleTransformation()`/`createXslt()` posten aktuell an die Collection-URI `/sap/bc/adt/programs/transforms` — das liefert `ADT_NOT_FOUND`, für beide Tools identisch (auf einem realen SAP-System reproduziert). Weder `marcellourbani/abap-adt-api` (`objectcreator.ts`, `CreatableTypes`-Liste) noch `vscode_abap_remote_fs` enthalten einen Eintrag für XSLT/ST — die Referenzquellen, aus denen alle anderen `adt_create_*`-Endpunkte in diesem Projekt stammen, decken diesen Objekttyp nicht ab. Der bestehende Endpunkt war also nie gegen eine verifizierte Quelle abgeglichen. **Nicht weiter raten** (gleicher Grundsatz wie bei BDEF, siehe `CLAUDE.md`) — vor einem Fix wird ein ADT-Netzwerk-Trace aus Eclipse beim manuellen Anlegen einer Simple Transformation/eines XSLT-Programms benötigt. Workaround: manuell in Eclipse/SE80 anlegen, Quelltext danach per `adt_write_object` setzen (Lese-/Schreib-Endpunkte sind von diesem Bug nicht betroffen).
 
 ---
 

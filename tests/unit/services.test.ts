@@ -6,6 +6,7 @@ import { ObjectService } from "../../src/services/ObjectService.js";
 import { LockService } from "../../src/services/LockService.js";
 import { ATCService } from "../../src/services/ATCService.js";
 import { TransportService } from "../../src/services/TransportService.js";
+import { PackageService } from "../../src/services/PackageService.js";
 import {
   MOCK_ACTIVATION_SUCCESS_XML,
   MOCK_ACTIVATION_ERROR_XML,
@@ -584,5 +585,18 @@ describe("TransportService", () => {
     const mockGet = (client as unknown as { get: ReturnType<typeof jest.fn> }).get;
     const [, options] = mockGet.mock.calls[0] as [string, { headers: Record<string, string> }];
     expect(options.headers.Accept).toBe("application/vnd.sap.as+xml");
+  });
+});
+
+describe("PackageService", () => {
+  it("requests the generic XML type when getting package content", async () => {
+    const client = createMockClient({});
+    const service = new PackageService(client);
+
+    await service.getPackageContent("Z_TEST");
+
+    const mockGet = (client as unknown as { get: ReturnType<typeof jest.fn> }).get;
+    const [, options] = mockGet.mock.calls[0] as [string, { headers: Record<string, string> }];
+    expect(options.headers.Accept).toBe("application/xml");
   });
 });
