@@ -743,6 +743,68 @@ Accept: application/vnd.sap.adt.ddic.domain+xml
 
 ---
 
+## Tabellendaten lesen (SE16N-Ersatz)
+
+**Quelle:** SAP-ADT-Discovery-Katalog ("Freestyle Data Preview for DDIC" /
+"Modelled Data Preview for DDIC"), cross-verifiziert gegen drei unabhängige
+Open-Source-Referenzimplementierungen (`marcellourbani/abap-adt-api`,
+`Hochfrequenz/adtler` — dort explizit "Verified ... against a real SAP
+S/4HANA on-premise system" —, `abapify/adt-cli`). **Noch nicht live gegen
+ein System dieses Projekts verifiziert.**
+
+```
+POST /sap/bc/adt/datapreview/freestyle?rowNumber={n}
+Content-Type: text/plain
+Accept: application/*
+
+Body: <ABAP-Open-SQL-SELECT-Statement>
+```
+
+Nur lesende `SELECT`-Statements werden unterstützt (Joins, WHERE, berechnete
+Spalten). Antwort-XML ist **spaltenorientiert**:
+
+```xml
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>2</dataPreview:totalRows>
+  <dataPreview:queryExecutionTime>12.5</dataPreview:queryExecutionTime>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="MATNR" dataPreview:type="C"
+      dataPreview:keyAttribute="true" dataPreview:description="Material" dataPreview:length="18"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>100000</dataPreview:data>
+      <dataPreview:data>100001</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <!-- ein <dataPreview:columns>-Block pro Spalte, dataSet-Reihenfolge über alle Spalten identisch -->
+</dataPreview:tableData>
+```
+
+`TableService.runSqlQuery()` transponiert das in zeilenorientierte Objekte
+(`{MATNR: "100000", ...}`) — alle Zellwerte kommen von SAP als String.
+
+**Client-seitige Absicherung:** Vor jedem Request wird geprüft, dass der
+(getrimmte) Body mit `SELECT` beginnt (case-insensitiv) und kein `;` enthält
+— schnelles, klares Fehlerbild, kein Ersatz für SAPs eigene serverseitige
+Read-Only-Durchsetzung.
+
+**Kein generisches SM30-Schreiben:** Der ADT-Discovery-Katalog enthält keinen
+generischen Write-Endpunkt für Customizing-Tabellen — Foreign-Key-Prüfungen
+und Table-Maintenance-Generator-Events der SM30 haben kein ADT-REST-Äquivalent.
+Schreiben wäre nur pro Tabelle über eine eigene RFC/BAPI oder ein
+veröffentlichtes OData-Service möglich (siehe `src/tools/odata/publishBinding.ts`)
+— bewusst nicht implementiert.
+
+**Live-Verifikations-Checkliste (vor Vertrauen in diesen Abschnitt):**
+- Bekannte Tabelle abfragen (z. B. `SELECT mandt, matnr, maktx FROM makt WHERE spras = 'D'`),
+  Zeilen-/Spaltenzahl gegen SE16N-Anzeige der gleichen Tabelle abgleichen
+- Nicht-`SELECT`-Statement testen → client-seitige Ablehnung greift vor dem Request
+- SQL-Syntaxfehler in der Query → tatsächliches SAP-Fehlerformat prüfen
+- `rowNumber` weglassen → SAPs eigenes Default-Verhalten prüfen (Doku behauptet Default 100, ungeprüft)
+- Prüfen, ob der `dataPreview:`-Namespace-Präfix im echten Response erhalten bleibt
+  (`TableService` hat einen Fallback auf unpräfixierte Keys, falls nicht)
+
+---
+
 ## Versionen / Versionsvergleich
 
 ### Versionsliste
