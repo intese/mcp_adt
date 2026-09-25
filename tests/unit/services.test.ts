@@ -12,6 +12,8 @@ import {
   MOCK_ACTIVATION_SUCCESS_XML,
   MOCK_ACTIVATION_ERROR_XML,
   MOCK_ACTIVATION_ERROR_NESTED_TEXT_XML,
+  MOCK_ACTIVATION_ERROR_EMPTY_XML,
+  MOCK_ACTIVATION_ERROR_WRAPPED_TEXT_XML,
   MOCK_SYNTAX_CHECK_CLEAN_XML,
   MOCK_SYNTAX_CHECK_ERROR_XML,
   MOCK_UNIT_TEST_RESULT_XML,
@@ -142,6 +144,34 @@ describe("ActivationService", () => {
     );
 
     expect(result.messages[0]?.description).toContain("not allowed outside a loop");
+  });
+
+  it("never silently drops a message with no text in any known shape", async () => {
+    const client = createMockClient({ activation: MOCK_ACTIVATION_ERROR_EMPTY_XML });
+    const service = new ActivationService(client);
+
+    const result = await service.activateObject(
+      "/sap/bc/adt/classes/classes/ZCL_TEST",
+      "ZCL_TEST",
+    );
+
+    const errorMessage = result.messages.find((m) => m.type === "E");
+    expect(errorMessage?.description).not.toBe("");
+    expect(errorMessage?.description).toContain("line");
+  });
+
+  it("joins a shortText/txt split across multiple sibling elements into one line", async () => {
+    const client = createMockClient({ activation: MOCK_ACTIVATION_ERROR_WRAPPED_TEXT_XML });
+    const service = new ActivationService(client);
+
+    const result = await service.activateObject(
+      "/sap/bc/adt/bo/behaviordefinitions/Z_TEST_BDEF",
+      "Z_TEST_BDEF",
+    );
+
+    expect(result.messages[0]?.description).toBe(
+      'Da die Verhaltensdefinition "strict" ist, muss jede Entität entweder als "authorization master" oder als "authorization dependent" gekennzeichnet werden.',
+    );
   });
 });
 
