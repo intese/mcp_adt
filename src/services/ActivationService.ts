@@ -39,6 +39,8 @@ export class ActivationService {
       },
     );
 
+    logger.debug("Activation response XML", { xml });
+
     const result = this.parseActivationResult(xml);
     if (result.success) {
       logger.info("Activation successful", { objects: objects.map((o) => o.name) });
@@ -108,14 +110,15 @@ ${refs}
   }
 
   /**
-   * UNVERIFIED (2026-09-11): live testing showed `<msg>`'s description always came
-   * back empty via a plain `extractText(node)` read, but a repeat live capture to
-   * confirm the real shape wasn't possible — diagnostic attempts got stuck on
-   * orphaned ENQUEUE locks without lock-table (SM12) access to recover. SAP's
-   * other `chkl:`-family check-list responses commonly nest the
-   * message text under a `shortText`/`txt` child element rather than as direct
-   * text, so that's tried as a fallback here. Re-verify against a real error
-   * response before trusting this fully.
+   * Live-verified (2026-09-25, BDEF activation abort, `strict ( 2 );` without a
+   * matching `authorization master`/`authorization dependent` clause): the
+   * `shortText`/`txt` nesting can carry the message text split across *multiple*
+   * `txt` elements (fast-xml-parser then yields an array) rather than a single
+   * string — apparently how SAP wraps a long line. `ensureArray` + join
+   * reconstructs the original single-line text. Any other, still-unknown shape
+   * falls back to a raw dump of the node's attributes/children instead of a
+   * silent `""`, and the raw response XML is logged at debug level in
+   * `activateObjects()` so a genuinely new shape can be diagnosed from there.
    */
   private extractMessageText(node: unknown): string {
     const direct = extractText(node);
@@ -124,10 +127,18 @@ ${refs}
     const n = node as Record<string, unknown>;
     const shortText = n["shortText"] as Record<string, unknown> | undefined;
     if (shortText) {
-      const nested = extractText(shortText["txt"] ?? shortText);
-      if (nested) return nested;
+      const parts = ensureArray(shortText["txt"])
+        .map((t) => extractText(t))
+        .filter((t) => t.length > 0);
+      if (parts.length > 0) return parts.join(" ");
     }
-    return "";
+
+    return this.describeUnknownMessageNode(node);
+  }
+
+  private describeUnknownMessageNode(node: unknown): string {
+    if (!node || typeof node !== "object" || Object.keys(node).length === 0) return "";
+    return `[SAP sent no message text; raw node: ${JSON.stringify(node)}]`;
   }
 
   private extractInactiveObjects(parsed: Record<string, unknown>): InactiveObject[] {

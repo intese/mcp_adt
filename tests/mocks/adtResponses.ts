@@ -89,6 +89,26 @@ export const MOCK_ACTIVATION_ERROR_NESTED_TEXT_XML = `<?xml version="1.0" encodi
   </msg>
 </chkl:messages>`;
 
+// Reproduced live: a message with neither direct text nor a shortText/txt child at all.
+export const MOCK_ACTIVATION_ERROR_EMPTY_XML = `<?xml version="1.0" encoding="utf-8"?>
+<chkl:messages xmlns:chkl="http://www.sap.com/adt/activation">
+  <msg type="W" line="1">Aktivierung wurde abgebrochen</msg>
+  <msg type="E" line="1"/>
+</chkl:messages>`;
+
+// Live-verified (2026-09-25, BDEF activation abort): SAP wraps a long shortText
+// across multiple sibling <txt> elements, which fast-xml-parser turns into an
+// array rather than a single string.
+export const MOCK_ACTIVATION_ERROR_WRAPPED_TEXT_XML = `<?xml version="1.0" encoding="utf-8"?>
+<chkl:messages xmlns:chkl="http://www.sap.com/adt/activation">
+  <msg objDescr="Verhaltensdefinition Z_TEST_BDEF" type="E" line="1" code="+BDL(201)">
+    <shortText>
+      <txt>Da die Verhaltensdefinition "strict" ist, muss jede Entität entweder als "authorization master" oder als "authorization</txt>
+      <txt>dependent" gekennzeichnet werden.</txt>
+    </shortText>
+  </msg>
+</chkl:messages>`;
+
 export const MOCK_SYNTAX_CHECK_CLEAN_XML = `<?xml version="1.0" encoding="utf-8"?>
 <checkRun:checkResultList xmlns:checkRun="http://www.sap.com/adt/checkrun">
   <checkRun:checkResult checkRun:reporter="abapCheckRun">
