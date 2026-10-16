@@ -246,6 +246,36 @@ describe("UnitTestService", () => {
     expect(result.summary.diagnosticNote).toContain("empty aunit:runResult");
   });
 
+  it("parses real SAP shape (unprefixed children and attributes) incl. alerts", async () => {
+    const xml = `<?xml version="1.0" encoding="utf-8"?><aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit"><program adtcore:uri="/sap/bc/adt/oo/classes/zcl_t" adtcore:name="ZCL_T" xmlns:adtcore="http://www.sap.com/adt/core"><testClasses><testClass adtcore:name="LTC_A"><testMethods><testMethod adtcore:name="OK" executionTime="0.04"/><testMethod adtcore:name="BAD" executionTime="0.10"><alerts><alert kind="failedAssertion" severity="critical"><title>Assertion failed</title><details><detail text="Expected 1"/></details></alert></alerts></testMethod></testMethods></testClass></testClasses></program></aunit:runResult>`;
+    const service = new UnitTestService(createMockClient({ testruns: xml }));
+    const result = await service.runTests({ objectUri: "/sap/bc/adt/oo/classes/zcl_t", objectName: "ZCL_T" });
+
+    expect(result.status).toBe("failed");
+    expect(result.summary).toMatchObject({ total: 2, passed: 1, failed: 1 });
+    expect(result.programs[0]?.testClasses[0]?.methods[1]?.alerts[0]?.kind).toBe("failedAssertion");
+  });
+
+  it("parses a runResult whose alerts contain thousands of XML entities", async () => {
+    // Real failing runs embed escaped XML in <detail text="...">; fast-xml-parser's default
+    // maxTotalExpansions (1000) used to abort parsing, which surfaced as passed/0 tests.
+    const noisy = "&lt;a&gt;".repeat(1500);
+    const xml = `<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit"><program adtcore:name="ZCL_T" xmlns:adtcore="http://www.sap.com/adt/core"><testClasses><testClass adtcore:name="LTC_A"><testMethods><testMethod adtcore:name="BAD"><alerts><alert kind="failedAssertion" severity="critical"><title>x</title><details><detail text="${noisy}"/></details></alert></alerts></testMethod></testMethods></testClass></testClasses></program></aunit:runResult>`;
+    const service = new UnitTestService(createMockClient({ testruns: xml }));
+    const result = await service.runTests({ objectUri: "/sap/bc/adt/oo/classes/zcl_t", objectName: "ZCL_T" });
+
+    expect(result.status).toBe("failed");
+    expect(result.summary).toMatchObject({ total: 1, failed: 1 });
+  });
+
+  it("never reports passed when the response contains no test methods", async () => {
+    const xml = `<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit"><program adtcore:name="ZCL_T" xmlns:adtcore="http://www.sap.com/adt/core"><testClasses/></program></aunit:runResult>`;
+    const service = new UnitTestService(createMockClient({ testruns: xml }));
+    const result = await service.runTests({ objectUri: "/sap/bc/adt/oo/classes/zcl_t", objectName: "ZCL_T" });
+
+    expect(result.status).not.toBe("passed");
+  });
+
   it("falls back to vit-class strategy when oo-class returns empty result", async () => {
     // First POST (oo-class) → empty, second POST (vit-class) → real result
     const client = createMockClient({}, [MOCK_UNIT_TEST_EMPTY_XML, MOCK_UNIT_TEST_RESULT_XML]);

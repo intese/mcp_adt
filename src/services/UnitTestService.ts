@@ -221,12 +221,29 @@ export class UnitTestService {
         programs.push(this.parseProgram(progNode));
       }
     } catch (err) {
-      logger.debug("Failed to parse unit test XML", {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn("Failed to parse unit test XML", { error: message });
+      return {
+        status: "error",
+        programs,
+        summary: {
+          total: 0, passed: 0, failed: 0, errors: 1,
+          diagnosticNote: `Could not parse aunit:runResult: ${message}. Raw response: ${xml.slice(0, 500)}`,
+        },
+      };
     }
 
     const summary = this.computeSummary(programs);
+    if (summary.total === 0) {
+      // A non-empty runResult without a single test method must never read as "passed":
+      // red tests would be invisible. Treat it like an empty result (lets the next URI strategy run).
+      logger.warn("aunit:runResult contained no test methods", { strategy, responsePreview: xml.slice(0, 500) });
+      return {
+        status: "no_tests_selected",
+        programs,
+        summary: { ...summary, diagnosticNote: `${EMPTY_RESULT_NOTE} Response contained no testMethod nodes.` },
+      };
+    }
     const status: UnitTestStatus = summary.failed > 0 || summary.errors > 0 ? "failed" : "passed";
 
     return { status, programs, summary };
@@ -273,7 +290,7 @@ export class UnitTestService {
   private parseMethod(node: unknown): UnitTestMethod {
     const n = node as Record<string, unknown>;
     const name = attr(n, "adtcore:name");
-    const execTime = parseInt(attr(n, "aunit:executionTime") || "0", 10);
+    const execTime = Math.round(parseFloat(attr(n, "aunit:executionTime") || attr(n, "executionTime") || "0") * 1000);
 
     const alertNodes = ensureArray(
       getNestedValue(n, ["aunit:alerts", "aunit:alert"]) as unknown ??
@@ -294,8 +311,8 @@ export class UnitTestService {
 
   private parseAlert(node: unknown): UnitTestAlert {
     const n = node as Record<string, unknown>;
-    const kind = (attr(n, "aunit:kind") || "assertion") as UnitTestAlert["kind"];
-    const severity = (attr(n, "aunit:severity") || "critical") as UnitTestAlert["severity"];
+    const kind = (attr(n, "aunit:kind") || attr(n, "kind") || "assertion") as UnitTestAlert["kind"];
+    const severity = (attr(n, "aunit:severity") || attr(n, "severity") || "critical") as UnitTestAlert["severity"];
 
     const title = extractText((n["aunit:title"] ?? n["title"]) as unknown);
 

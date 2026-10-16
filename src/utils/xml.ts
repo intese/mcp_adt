@@ -9,6 +9,9 @@ const PARSE_OPTIONS: X2jOptions = {
   parseTagValue: false,
   allowBooleanAttributes: true,
   removeNSPrefix: false,
+  // The default maxTotalExpansions (1000) is exceeded by ADT responses that embed escaped XML in
+  // attributes (e.g. ABAP Unit alerts) and makes parseXml throw. Responses come from the configured SAP system.
+  processEntities: { maxTotalExpansions: 1_000_000, maxExpandedLength: 50_000_000 },
 };
 
 const BUILD_OPTIONS: XmlBuilderOptions = {
