@@ -433,6 +433,23 @@ describe("ObjectService", () => {
     );
   });
 
+  it("addTestClassInclude creates the CCAU include on an existing class without re-creating the class", async () => {
+    const client = createMockClient({ "_action=LOCK": MOCK_LOCK_RESULT_XML });
+    const service = new ObjectService(client, new LockService(client));
+
+    const ref = await service.addTestClassInclude("ZCL_TEST", "DEVK900001");
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const paths = (mockPost.mock.calls as [string][]).map(([p]) => p);
+    expect(paths).toHaveLength(3);
+    expect(paths[0]).toContain("_action=LOCK");
+    expect(paths[1]).toBe(
+      "/sap/bc/adt/oo/classes/ZCL_TEST/includes?lockHandle=LOCK_HANDLE_ABC123&corrNr=DEVK900001",
+    );
+    expect(paths[2]).toContain("_action=UNLOCK");
+    expect(ref.uri).toBe("/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses");
+  });
+
   it("propagates the error and still unlocks when CCAU include creation fails", async () => {
     const client = createMockClient({ "_action=LOCK": MOCK_LOCK_RESULT_XML });
     const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
