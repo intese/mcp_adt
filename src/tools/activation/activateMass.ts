@@ -13,7 +13,10 @@ const schema = z.object({
     )
     .min(1)
     .max(50)
-    .describe("List of objects to activate"),
+    .describe(
+      "List of objects to activate, each as {name, uri}, e.g. " +
+        '[{"name":"ZCL_FOO","uri":"/sap/bc/adt/oo/classes/zcl_foo"}]',
+    ),
   preaudit: z.boolean().default(true),
 });
 

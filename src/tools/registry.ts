@@ -47,6 +47,7 @@ import { getLockOwnerTool } from "./locks/owner.js";
 
 // ABAP-specific
 import { createClassTool } from "./abap/createClass.js";
+import { createTestIncludeTool } from "./abap/createTestInclude.js";
 import { createInterfaceTool } from "./abap/createInterface.js";
 import { createReportTool } from "./abap/createReport.js";
 import { createFunctionGroupTool } from "./abap/createFunctionGroup.js";
@@ -125,6 +126,7 @@ export const ALL_TOOLS: AnyToolDefinition[] = [
 
   // ABAP
   asTool(createClassTool),
+  asTool(createTestIncludeTool),
   asTool(createInterfaceTool),
   asTool(createReportTool),
   asTool(createFunctionGroupTool),

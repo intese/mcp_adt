@@ -158,16 +158,23 @@ export class ObjectService {
     logger.info("Class created", { name: options.name, uri: resultUri });
 
     if (options.generateTestClass) {
-      const lock = await this.lockService.acquireLock(resultUri);
-      try {
-        await this.createTestClassInclude(options.name, lock.lockHandle, options.transportNumber);
-        logger.info("Test class include created", { name: options.name });
-      } finally {
-        await this.lockService.releaseLock(resultUri, lock.lockHandle);
-      }
+      await this.addTestClassInclude(options.name, options.transportNumber);
     }
 
     return { uri: resultUri, name: options.name, type: "CLAS/OC" };
+  }
+
+  // Adds the CCAU test-class include to an existing class (lock → create → unlock).
+  async addTestClassInclude(name: string, transportNumber?: string): Promise<AdtObjectReference> {
+    const uri = classUri(name);
+    const lock = await this.lockService.acquireLock(uri);
+    try {
+      await this.createTestClassInclude(name, lock.lockHandle, transportNumber);
+      logger.info("Test class include created", { name });
+    } finally {
+      await this.lockService.releaseLock(uri, lock.lockHandle);
+    }
+    return { uri: `${uri}/includes/testclasses`, name, type: "CLAS/OC" };
   }
 
   // SAP only auto-creates CCDEF/CCIMP for a new class; the CCAU test-class
