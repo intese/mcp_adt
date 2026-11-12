@@ -309,6 +309,8 @@ export interface UnitTestRunOptions {
   };
   uriStrategy?: AUnitObjectUriStrategy;
   packageName?: string;
+  /** Per-request timeout override in ms (default: client requestTimeout). */
+  timeoutMs?: number;
   useOfficialApiAunitRuns?: boolean;
 }
 

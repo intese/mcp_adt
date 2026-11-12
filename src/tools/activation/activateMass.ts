@@ -18,6 +18,16 @@ const schema = z.object({
         '[{"name":"ZCL_FOO","uri":"/sap/bc/adt/oo/classes/zcl_foo"}]',
     ),
   preaudit: z.boolean().default(true),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(1_800_000)
+    .optional()
+    .describe(
+      "Request timeout in milliseconds for this call (default: REQUEST_TIMEOUT, 60000). " +
+        "Use for long-running requests.",
+    ),
 });
 
 export const activateMassTool: ToolDefinition<typeof schema> = {
@@ -29,7 +39,11 @@ export const activateMassTool: ToolDefinition<typeof schema> = {
   inputSchema: schema,
   handler: async (args, services) => {
     try {
-      const result = await services.activationService.activateObjects(args.objects, args.preaudit);
+      const result = await services.activationService.activateObjects(
+        args.objects,
+        args.preaudit,
+        args.timeoutMs,
+      );
       return successResult(result);
     } catch (err) {
       return errorResult(err, "adt_activate_mass");

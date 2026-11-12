@@ -84,6 +84,20 @@ function createMockClient(
 }
 
 describe("ActivationService", () => {
+  it("passes timeoutMs through as per-request timeout and omits it by default", async () => {
+    const client = createMockClient({ activation: MOCK_ACTIVATION_SUCCESS_XML });
+    const service = new ActivationService(client);
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const objs = [{ uri: "/sap/bc/adt/classes/classes/ZCL_TEST", name: "ZCL_TEST" }];
+
+    await service.activateObjects(objs, true, 240000);
+    await service.activateObjects(objs, true);
+
+    const calls = mockPost.mock.calls as [string, string, { timeout?: number }][];
+    expect(calls[0]?.[2].timeout).toBe(240000);
+    expect(calls[1]?.[2]).not.toHaveProperty("timeout");
+  });
+
   it("returns success for clean activation response", async () => {
     const client = createMockClient({ activation: MOCK_ACTIVATION_SUCCESS_XML });
     const service = new ActivationService(client);
@@ -201,6 +215,20 @@ describe("SyntaxService", () => {
 });
 
 describe("UnitTestService", () => {
+  it("passes timeoutMs through as per-request timeout and omits it by default", async () => {
+    const client = createMockClient({ testruns: MOCK_UNIT_TEST_RESULT_XML });
+    const service = new UnitTestService(client);
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const base = { objectUri: "/sap/bc/adt/classes/classes/ZCL_TEST", objectName: "ZCL_TEST" };
+
+    await service.runTests({ ...base, timeoutMs: 300000 });
+    await service.runTests(base);
+
+    const calls = mockPost.mock.calls as [string, string, { timeout?: number }][];
+    expect(calls[0]?.[2].timeout).toBe(300000);
+    expect(calls[1]?.[2]).not.toHaveProperty("timeout");
+  });
+
   it("returns passed status for all-passing tests", async () => {
     const client = createMockClient({ testruns: MOCK_UNIT_TEST_RESULT_XML });
     const service = new UnitTestService(client);

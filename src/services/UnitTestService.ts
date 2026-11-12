@@ -107,6 +107,7 @@ export class UnitTestService {
             "Content-Type": "application/xml",
             Accept: "application/xml",
           },
+          ...(options.timeoutMs !== undefined && { timeout: options.timeoutMs }),
         },
       );
 
