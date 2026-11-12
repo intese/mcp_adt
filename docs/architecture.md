@@ -210,6 +210,7 @@ MCP Client { content: [{ type: "text", text: "..." }] }
 ```
 1. adt_lock_object      → LockService.acquireLock(uri)   → Lock Handle
 2. adt_write_object     → ObjectService.setSource(uri, src, lockHandle, transport)
+                          (src inline or read from sourceFilePath)
 3. adt_syntax_check     → SyntaxService.check(uri)
 4. adt_activate_object  → ActivationService.activate(uri)
 5. adt_unlock_object    → LockService.releaseLock(uri, lockHandle)
