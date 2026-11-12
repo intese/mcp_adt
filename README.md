@@ -162,7 +162,7 @@ Or use a `.env` file in the server directory and run with:
 |------|-------------|
 | `adt_search_object` | Search objects by name pattern |
 | `adt_read_object` | Read object source code |
-| `adt_write_object` | Write object source code |
+| `adt_write_object` | Write object source code (inline `source`, or `sourceFilePath` for large sources) |
 | `adt_create_object` | Create generic object |
 | `adt_delete_object` | Delete object |
 
@@ -275,6 +275,8 @@ Or use a `.env` file in the server directory and run with:
      lockHandle: "...",
      transportNumber: "DEVK900001"
    }
+   # Large sources: pass sourceFilePath (absolute local path, max 10 MB, no .env)
+   # instead of source, so the content is not sent as a tool argument.
 
 5. Syntax check:
    adt_syntax_check { objectUri: "..." }
