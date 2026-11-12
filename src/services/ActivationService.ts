@@ -24,6 +24,7 @@ export class ActivationService {
   async activateObjects(
     objects: AdtObjectReference[],
     preaudit = true,
+    timeoutMs?: number,
   ): Promise<ActivationResult> {
     logger.debug("Activating objects", { count: objects.length, preaudit });
 
@@ -36,6 +37,7 @@ export class ActivationService {
           "Content-Type": "application/vnd.sap.adt.activation.request+xml",
           Accept: "application/vnd.sap.adt.activation.result+xml",
         },
+        ...(timeoutMs !== undefined && { timeout: timeoutMs }),
       },
     );
 

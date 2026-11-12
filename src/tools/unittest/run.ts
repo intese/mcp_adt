@@ -26,6 +26,16 @@ const schema = z.object({
     .string()
     .optional()
     .describe("Package name — required when uriStrategy is 'vit-package', optional otherwise"),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(1_800_000)
+    .optional()
+    .describe(
+      "Request timeout in milliseconds for this call (default: REQUEST_TIMEOUT, 60000). " +
+        "Applies per request; with several URI strategies tried in sequence the total can be a multiple.",
+    ),
 });
 
 export const runUnitTestsTool: ToolDefinition<typeof schema> = {
@@ -53,6 +63,7 @@ export const runUnitTestsTool: ToolDefinition<typeof schema> = {
         },
         uriStrategy: args.uriStrategy,
         packageName: args.packageName,
+        timeoutMs: args.timeoutMs,
       });
       return successResult(result);
     } catch (err) {

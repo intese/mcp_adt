@@ -170,7 +170,7 @@ Or use a `.env` file in the server directory and run with:
 | Tool | Description |
 |------|-------------|
 | `adt_activate_object` | Activate single object |
-| `adt_activate_mass` | Activate multiple objects |
+| `adt_activate_mass` | Activate multiple objects (optional `timeoutMs`) |
 
 ### Syntax
 | Tool | Description |
@@ -239,7 +239,7 @@ Or use a `.env` file in the server directory and run with:
 ### Unit Tests
 | Tool | Description |
 |------|-------------|
-| `adt_run_unit_tests` | Execute unit tests |
+| `adt_run_unit_tests` | Execute unit tests (optional `timeoutMs`) |
 | `adt_get_unit_test_result` | Re-run and get results |
 
 ### Transformations & XML
@@ -293,6 +293,8 @@ Or use a `.env` file in the server directory and run with:
 ```
 1. Run tests:
    adt_run_unit_tests { objectUri: "...", objectName: "ZCL_MY_CLASS" }
+   # Long runs: add timeoutMs (1000-1800000 ms) to override REQUEST_TIMEOUT for this call only.
+   # It applies per HTTP request; if several URI strategies are tried, the total can be a multiple.
 
 2. If failures: read source, modify, write, syntax check, activate
 
