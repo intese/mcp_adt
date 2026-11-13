@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AdtHttpClient } from "../adt/client.js";
 import type {
   UnitTestRunResult,
@@ -116,7 +119,9 @@ export class UnitTestService {
         responsePreview: xml?.slice(0, 1000),
       });
 
-      return this.parseTestResult(xml, strategy);
+      const result = this.parseTestResult(xml, strategy);
+      this.dumpRawResponseIfSuspicious(xml, result, options.objectName);
+      return result;
     } catch (err) {
       if (err instanceof AdtNotAcceptableError) {
         logger.warn("Unit test run returned 406 Not Acceptable", {
@@ -126,6 +131,34 @@ export class UnitTestService {
         });
       }
       throw err;
+    }
+  }
+
+  /**
+   * Diagnostic hook: writes the complete raw aunit:runResult XML to a file when the parsed result
+   * looks anomalous (duplicate method names within a class, or any "abortion" alert), or always when
+   * AUNIT_DUMP_RAW=1. Target dir: AUNIT_DUMP_DIR or <tmpdir>/adt-aunit-dumps. Never throws.
+   */
+  private dumpRawResponseIfSuspicious(xml: string, result: UnitTestRunResult, objectName: string): void {
+    try {
+      const forced = process.env["AUNIT_DUMP_RAW"] === "1";
+      let suspicious = false;
+      for (const prog of result.programs) {
+        for (const cls of prog.testClasses) {
+          const names = cls.methods.map((m) => m.name);
+          if (new Set(names).size !== names.length) suspicious = true;
+          if (cls.methods.some((m) => m.alerts.some((a) => (a.kind as string) === "abortion"))) suspicious = true;
+        }
+      }
+      if (!forced && !suspicious) return;
+      const dir = process.env["AUNIT_DUMP_DIR"] || join(tmpdir(), "adt-aunit-dumps");
+      mkdirSync(dir, { recursive: true });
+      const safe = objectName.replace(/[^A-Za-z0-9_]/g, "_");
+      const file = join(dir, `aunit_${safe}_${new Date().toISOString().replace(/[:.]/g, "-")}.xml`);
+      writeFileSync(file, xml, "utf8");
+      logger.warn("Raw aunit:runResult written for diagnosis", { file, suspicious });
+    } catch (err) {
+      logger.debug("Could not write aunit raw dump", { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
