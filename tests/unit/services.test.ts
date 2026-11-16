@@ -212,6 +212,17 @@ describe("SyntaxService", () => {
     expect(result.findings[0]?.line).toBe(5);
     expect(result.findings[0]?.column).toBe(10);
   });
+
+  it("sends the only content type SAP accepts when checking inline source", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_CLEAN_XML });
+    const service = new SyntaxService(client);
+
+    await service.checkSource("report zprobe.", "/sap/bc/adt/programs/programs/zr_test");
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const [, , options] = mockPost.mock.calls[0] as [string, string, { headers: Record<string, string> }];
+    expect(options.headers["Content-Type"]).toBe("application/vnd.sap.adt.checkobjects+xml");
+  });
 });
 
 describe("UnitTestService", () => {

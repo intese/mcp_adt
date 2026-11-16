@@ -39,7 +39,7 @@ export class SyntaxService {
       body,
       {
         headers: {
-          "Content-Type": "application/vnd.sap.adt.checkrun.request+xml",
+          "Content-Type": "application/vnd.sap.adt.checkobjects+xml",
           Accept: "application/vnd.sap.adt.checkmessages+xml",
         },
       },
