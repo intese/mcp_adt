@@ -37,6 +37,7 @@ const unb64 = (s: string): Buffer => Buffer.from(s, "base64");
 export class RfcBridgeTransport implements AdtTransport {
   private child: ChildProcessWithoutNullStreams | null = null;
   private nextId = 1;
+  private stderrTail: string[] = [];
   private readonly pending = new Map<string, Pending>();
 
   constructor(
@@ -96,6 +97,7 @@ export class RfcBridgeTransport implements AdtTransport {
     const child = spawn(
       this.rfc.javaBin,
       [
+        "--enable-native-access=ALL-UNNAMED",
         `-Djava.library.path=${this.rfc.jcoNativeDir}`,
         "-cp",
         [this.rfc.bridgeClassDir, this.rfc.jcoJar].join(sep),
@@ -119,11 +121,21 @@ export class RfcBridgeTransport implements AdtTransport {
 
     readline.createInterface({ input: child.stdout }).on("line", (l) => this.onLine(l));
     // JCo stderr output may contain connection details; log at debug only
-    child.stderr.on("data", (d: Buffer) => logger.debug("rfc-bridge stderr", { text: d.toString() }));
+    child.stderr.on("data", (d: Buffer) => {
+      const text = this.redact(d.toString());
+      logger.debug("rfc-bridge stderr", { text });
+      this.stderrTail.push(...text.split("\n").filter((l) => l.trim() !== ""));
+      if (this.stderrTail.length > 20) this.stderrTail = this.stderrTail.slice(-20);
+    });
     child.on("error", (e) => this.failAll(new AdtNetworkError(`Cannot start RFC bridge: ${e.message}`, e)));
     child.on("exit", (code) => {
       this.child = null;
-      this.failAll(new AdtNetworkError(`RFC bridge exited (code ${code})`));
+      const tail = this.stderrTail.slice(-8).join(" | ");
+      this.failAll(
+        new AdtNetworkError(
+          `RFC bridge exited (code ${code})${code !== 0 && tail ? `: ${tail}` : ""}`,
+        ),
+      );
     });
 
     this.child = child;
@@ -152,6 +164,11 @@ export class RfcBridgeTransport implements AdtTransport {
       headers,
       data: unb64(f[4] ?? "").toString("utf8"),
     });
+  }
+
+  private redact(text: string): string {
+    const pw = this.adt.password;
+    return pw ? text.split(pw).join("***") : text;
   }
 
   private failAll(err: Error): void {

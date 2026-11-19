@@ -30,6 +30,7 @@ import { logger } from "./utils/logger.js";
 import type { ToolServices } from "./types/index.js";
 import { z } from "zod";
 import fs from "fs";
+import { checkJvmMatchesNativeLib } from "./adt/rfcPreflight.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { RfcBridgeTransport } from "./adt/rfcTransport.js";
@@ -70,6 +71,8 @@ async function main(): Promise<void> {
       missing.push([bridgeDir, "RFC bridge not built (run: SAP_JCO_JAR=<jar> npm run build:bridge)"]);
     if (!fs.existsSync(config.jcoJar!)) missing.push([config.jcoJar!, "SAP_JCO_JAR not found"]);
     if (!nativeOk) missing.push([config.jcoNativeDir!, "JCo native library not found in SAP_JCO_NATIVE_DIR"]);
+    const archError = checkJvmMatchesNativeLib(config.javaBin, config.jcoNativeDir!);
+    if (archError) missing.push([config.javaBin, archError]);
     if (missing.length > 0) {
       throw new Error(`SAP_TRANSPORT=rfc but: ${missing.map(([f, m]) => `${m} (${f})`).join("; ")}. No fallback to HTTP.`);
     }
