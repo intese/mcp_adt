@@ -68,7 +68,7 @@ SAP_CA_BUNDLE=                    # optional: Pfad zu CA-Zertifikat
 
 Ist kein HTTP-Port zum SAP-System freigegeben, aber Eclipse-ADT erreicht es über eine RFC-Destination (Dispatcher/Gateway), kann der Server die ADT-REST-Requests stattdessen über den Funktionsbaustein `SADT_REST_RFC_ENDPOINT` senden. Dazu startet er eine kleine Java-Brücke (`bridge/AdtRfcBridge.java`, SAP JCo) als Subprozess. Alle Tools bleiben unverändert.
 
-**Voraussetzungen:** Java (JDK mit `javac`), SAP JCo (`com.sap.conn.jco_*.jar` plus native Bibliothek `libsapjco3.*`, z. B. aus dem Eclipse-p2-Pool `~/.p2/pool/plugins/` — die Dateien werden nicht ins Repo eingecheckt).
+**Voraussetzungen:** Java ab 21 (JDK mit `javac`; die Brücke wird mit `--release 21` gebaut; die JVM-Architektur muss zur nativen JCo-Bibliothek passen, z. B. arm64-JVM für `macosx.aarch64` — sonst `SAP_JAVA_BIN` setzen, der Start bricht bei Abweichung mit klarer Meldung ab), SAP JCo (`com.sap.conn.jco_*.jar` plus native Bibliothek `libsapjco3.*`, z. B. aus dem Eclipse-p2-Pool `~/.p2/pool/plugins/` — die Dateien werden nicht ins Repo eingecheckt).
 
 ```bash
 # Brücke einmalig bauen

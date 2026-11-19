@@ -21,7 +21,7 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "build:bridge": "mkdir -p dist/bridge && javac -cp \"$SAP_JCO_JAR\" -d dist/bridge bridge/AdtRfcBridge.java"
+    "build:bridge": "mkdir -p dist/bridge && javac --release 21 -cp \"$SAP_JCO_JAR\" -d dist/bridge bridge/AdtRfcBridge.java"
   },
   "keywords": [
     "mcp",

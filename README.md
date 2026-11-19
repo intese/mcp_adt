@@ -80,7 +80,7 @@ REQUEST_TIMEOUT=60000
 
 ### RFC transport instead of HTTP (optional)
 
-If no HTTP port is open to the SAP system but Eclipse ADT reaches it through an RFC destination, set `SAP_TRANSPORT=rfc`. Requests are then sent via the function module `SADT_REST_RFC_ENDPOINT` through a small Java/SAP JCo bridge (`bridge/AdtRfcBridge.java`) started as a subprocess; all tools stay unchanged. Requires a JDK and the SAP JCo jar plus native library (not shipped in this repo).
+If no HTTP port is open to the SAP system but Eclipse ADT reaches it through an RFC destination, set `SAP_TRANSPORT=rfc`. Requests are then sent via the function module `SADT_REST_RFC_ENDPOINT` through a small Java/SAP JCo bridge (`bridge/AdtRfcBridge.java`) started as a subprocess; all tools stay unchanged. Requires a JDK 21+ (the bridge is compiled with `--release 21`) and the SAP JCo jar plus native library (not shipped in this repo). The JVM architecture must match the native library (e.g. an arm64 JVM for `com.sap.conn.jco.macosx.aarch64`); set `SAP_JAVA_BIN` if `java` on the PATH has a different architecture — startup aborts with a clear message on mismatch.
 
 ```bash
 SAP_JCO_JAR=/path/to/com.sap.conn.jco_3.1.13.jar npm run build:bridge
