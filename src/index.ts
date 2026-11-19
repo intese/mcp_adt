@@ -29,19 +29,24 @@ import { errorResult } from "./tools/helpers.js";
 import { logger } from "./utils/logger.js";
 import type { ToolServices } from "./types/index.js";
 import { z } from "zod";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { RfcBridgeTransport } from "./adt/rfcTransport.js";
 
 async function main(): Promise<void> {
   logger.info("Starting SAP ADT MCP Server", {
     version: "1.0.0",
-    sapUrl: config.sapUrl,
+    transport: config.sapTransport,
+    sapUrl: config.sapTransport === "rfc" ? undefined : config.sapUrl,
     sapClient: config.sapClient,
     sapUser: config.sapUser,
     logLevel: config.logLevel,
   });
 
   // Initialize ADT HTTP client
-  const adtClient = new AdtHttpClient({
-    baseUrl: config.sapUrl,
+  const clientConfig = {
+    baseUrl: config.sapTransport === "rfc" ? `rfc://${config.rfcAshost}` : config.sapUrl!,
     client: config.sapClient,
     user: config.sapUser,
     password: config.sapPassword,
@@ -53,7 +58,40 @@ async function main(): Promise<void> {
     maxRetries: config.maxRetries,
     retryDelay: config.retryDelay,
     sessionKeepaliveInterval: config.sessionKeepaliveInterval,
-  });
+  };
+  if (config.sapTransport === "rfc") {
+    const bridgeDir =
+      config.rfcBridgeClassDir ?? fileURLToPath(new URL("../dist/bridge", import.meta.url));
+    const nativeOk = ["libsapjco3.dylib", "libsapjco3.so", "sapjco3.dll"].some((n) =>
+      fs.existsSync(path.join(config.jcoNativeDir!, n)),
+    );
+    const missing: Array<[string, string]> = [];
+    if (!fs.existsSync(path.join(bridgeDir, "AdtRfcBridge.class")))
+      missing.push([bridgeDir, "RFC bridge not built (run: SAP_JCO_JAR=<jar> npm run build:bridge)"]);
+    if (!fs.existsSync(config.jcoJar!)) missing.push([config.jcoJar!, "SAP_JCO_JAR not found"]);
+    if (!nativeOk) missing.push([config.jcoNativeDir!, "JCo native library not found in SAP_JCO_NATIVE_DIR"]);
+    if (missing.length > 0) {
+      throw new Error(`SAP_TRANSPORT=rfc but: ${missing.map(([f, m]) => `${m} (${f})`).join("; ")}. No fallback to HTTP.`);
+    }
+  }
+  const adtClient =
+    config.sapTransport === "rfc"
+      ? new AdtHttpClient(
+          clientConfig,
+          new RfcBridgeTransport(clientConfig, {
+            ashost: config.rfcAshost!,
+            sysnr: config.rfcSysnr!,
+            gwhost: config.rfcGwhost,
+            gwserv: config.rfcGwserv,
+            jcoJar: config.jcoJar!,
+            jcoNativeDir: config.jcoNativeDir!,
+            bridgeClassDir:
+              config.rfcBridgeClassDir ??
+              fileURLToPath(new URL("../dist/bridge", import.meta.url)),
+            javaBin: config.javaBin,
+          }),
+        )
+      : new AdtHttpClient(clientConfig);
 
   // Initialize services
   const lockService = new LockService(adtClient);
@@ -229,6 +267,8 @@ function zodFieldToJsonSchema(field: z.ZodTypeAny): Record<string, unknown> {
 }
 
 main().catch((err: unknown) => {
-  logger.error("Fatal error starting MCP server", { error: err });
+  logger.error("Fatal error starting MCP server", {
+    error: err instanceof Error ? err.message : String(err),
+  });
   process.exit(1);
 });

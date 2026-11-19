@@ -3,7 +3,16 @@ import { ConfigSchema, type AppConfig } from "./schema.js";
 
 function loadConfig(): AppConfig {
   const result = ConfigSchema.safeParse({
+    sapTransport: process.env["SAP_TRANSPORT"] ?? "http",
     sapUrl: process.env["SAP_URL"],
+    rfcAshost: process.env["SAP_RFC_ASHOST"],
+    rfcSysnr: process.env["SAP_RFC_SYSNR"],
+    rfcGwhost: process.env["SAP_RFC_GWHOST"],
+    rfcGwserv: process.env["SAP_RFC_GWSERV"],
+    jcoJar: process.env["SAP_JCO_JAR"],
+    jcoNativeDir: process.env["SAP_JCO_NATIVE_DIR"],
+    rfcBridgeClassDir: process.env["SAP_RFC_BRIDGE_CLASSES"],
+    javaBin: process.env["SAP_JAVA_BIN"] ?? "java",
     sapClient: process.env["SAP_CLIENT"],
     sapUser: process.env["SAP_USER"],
     sapPassword: process.env["SAP_PASSWORD"],

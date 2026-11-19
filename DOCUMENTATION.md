@@ -64,6 +64,45 @@ SAP_CA_BUNDLE=                    # optional: Pfad zu CA-Zertifikat
 | `SAP_CA_BUNDLE` | — | Pfad zum CA-Bundle (PEM) für selbstsignierte Zertifikate |
 | `SAP_REQUEST_TIMEOUT` | `30000` | HTTP-Timeout in Millisekunden |
 
+### Transport über RFC statt HTTP (optional)
+
+Ist kein HTTP-Port zum SAP-System freigegeben, aber Eclipse-ADT erreicht es über eine RFC-Destination (Dispatcher/Gateway), kann der Server die ADT-REST-Requests stattdessen über den Funktionsbaustein `SADT_REST_RFC_ENDPOINT` senden. Dazu startet er eine kleine Java-Brücke (`bridge/AdtRfcBridge.java`, SAP JCo) als Subprozess. Alle Tools bleiben unverändert.
+
+**Voraussetzungen:** Java (JDK mit `javac`), SAP JCo (`com.sap.conn.jco_*.jar` plus native Bibliothek `libsapjco3.*`, z. B. aus dem Eclipse-p2-Pool `~/.p2/pool/plugins/` — die Dateien werden nicht ins Repo eingecheckt).
+
+```bash
+# Brücke einmalig bauen
+SAP_JCO_JAR=/pfad/zu/com.sap.conn.jco_3.1.13.jar npm run build:bridge
+npm run build
+# Native Bibliothek bereitstellen (macOS arm64, Beispiel)
+mkdir -p ~/jco-native
+unzip -j -o ~/.p2/pool/plugins/com.sap.conn.jco.macosx.aarch64_3.1.13.jar lib/libsapjco3.dylib -d ~/jco-native
+```
+
+```env
+SAP_TRANSPORT=rfc
+SAP_RFC_ASHOST=127.0.0.1          # Application-Server bzw. Dispatcher-Host
+SAP_RFC_SYSNR=00                  # Systemnummer
+SAP_JCO_JAR=/abs/pfad/com.sap.conn.jco_3.1.13.jar
+SAP_JCO_NATIVE_DIR=/abs/pfad/jco-native
+# optional: SAP_RFC_GWHOST, SAP_RFC_GWSERV, SAP_JAVA_BIN, SAP_RFC_BRIDGE_CLASSES
+SAP_CLIENT=100
+SAP_USER=DEINUSER
+SAP_PASSWORD="..."
+SAP_LANGUAGE=DE
+```
+
+| Variable | Default | Beschreibung |
+|---|---|---|
+| `SAP_TRANSPORT` | `http` | `http` (axios) oder `rfc` (Java/JCo-Brücke) |
+| `SAP_RFC_ASHOST` / `SAP_RFC_SYSNR` | — | Pflicht bei `rfc` |
+| `SAP_RFC_GWHOST` / `SAP_RFC_GWSERV` | — | Optional, Gateway abweichend vom Dispatcher |
+| `SAP_JCO_JAR` / `SAP_JCO_NATIVE_DIR` | — | Pflicht bei `rfc`: JCo-Jar bzw. Ordner mit `libsapjco3.*` |
+| `SAP_JAVA_BIN` | `java` | Java-Executable |
+| `SAP_RFC_BRIDGE_CLASSES` | `dist/bridge` | Ordner mit der kompilierten Brücke |
+
+**Verhalten im rfc-Modus:** `SAP_URL` wird ignoriert. Ist `SAP_TRANSPORT=rfc` bereits in der Umgebung des startenden Projekts gesetzt, wird die `.env` des Installationsverzeichnisses **nicht** geladen, damit keine Einstellungen eines anderen Systems einspringen. Fehlen Brücke, JCo-Jar oder native Bibliothek, bricht der Start mit einer klaren Meldung ab — es gibt keinen stillen Fallback auf HTTP. Anmeldung erfolgt per RFC-Logon (kein Basic-Auth/Cookie/CSRF-Handling auf HTTP-Ebene). Details: `docs/architecture.md`, Abschnitt „Transport-Schicht".
+
 ---
 
 ## MCP-Server registrieren

@@ -389,3 +389,14 @@ sap-adt-mcp-server/
 | `eslint` | Linting |
 | `prettier` | Formatierung |
 | `@types/node` | Node.js Typen |
+
+## Transport-Schicht (HTTP oder RFC)
+
+`AdtHttpClient` spricht über das Interface `AdtTransport` (`src/adt/transport.ts`). Default ist `HttpTransport` (axios). Mit `SAP_TRANSPORT=rfc` wird stattdessen `RfcBridgeTransport` (`src/adt/rfcTransport.ts`) genutzt: ein Java-Subprozess (`bridge/AdtRfcBridge.java`, SAP JCo) ruft den Funktionsbaustein `SADT_REST_RFC_ENDPOINT` auf — derselbe Weg wie Eclipse-ADT über eine RFC-Destination, ohne HTTP-Port.
+
+Vertrag des Bausteins (aus `com.sap.adt.communication` per `javap` ausgelesen, noch nicht live verifiziert):
+- Import `REQUEST`: `REQUEST_LINE{METHOD,URI,VERSION}`, `HEADER_FIELDS` (Tabelle `NAME`/`VALUE`), `MESSAGE_BODY` (Binär)
+- Export `RESPONSE`: `STATUS_LINE{VERSION,STATUS_CODE,REASON_PHRASE}`, `HEADER_FIELDS`, `MESSAGE_BODY`
+- Stateful-Session = `JCoContext.begin(destination)` (thread-/verbindungsgebunden); `Authorization`/`Cookie` entfallen (RFC-Logon).
+
+Einrichtung (`.env`): `SAP_TRANSPORT=rfc`, `SAP_RFC_ASHOST`, `SAP_RFC_SYSNR`, optional `SAP_RFC_GWHOST`/`SAP_RFC_GWSERV`, `SAP_JCO_JAR` (Pfad zu `com.sap.conn.jco_*.jar`), `SAP_JCO_NATIVE_DIR` (Ordner mit `libsapjco3.dylib`), optional `SAP_JAVA_BIN`, `SAP_RFC_BRIDGE_CLASSES`. `SAP_CLIENT`/`SAP_USER`/`SAP_PASSWORD`/`SAP_LANGUAGE` gelten weiter. Brücke bauen: `SAP_JCO_JAR=… npm run build:bridge`. Die JCo-Dateien werden nicht ins Repo eingecheckt.
