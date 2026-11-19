@@ -1,20 +1,12 @@
-import axios, {
-  type AxiosInstance,
-  type AxiosRequestConfig,
-  type AxiosResponse,
-  type InternalAxiosRequestConfig,
-} from "axios";
-import https from "https";
-import fs from "fs";
 import type { AdtClientConfig, SessionInfo } from "../types/index.js";
 import { SessionManager } from "./session.js";
 import {
   AdtAuthenticationError,
   AdtCsrfError,
   AdtNetworkError,
-  AdtTimeoutError,
   mapHttpError,
 } from "./errors.js";
+import { HttpTransport, type AdtTransport, type TransportResponse } from "./transport.js";
 import { logger, logHttpRequest, logHttpResponse } from "../utils/logger.js";
 
 export interface RequestOptions {
@@ -26,29 +18,18 @@ export interface RequestOptions {
   withCsrf?: boolean;
 }
 
-type AxiosHeaders = Record<string, string>;
+type RequestHeaders = Record<string, string>;
 
 export class AdtHttpClient {
-  private readonly axios: AxiosInstance;
+  private readonly transport: AdtTransport;
   private readonly session: SessionManager;
   private readonly config: AdtClientConfig;
   private loginPromise: Promise<void> | null = null;
 
-  constructor(config: AdtClientConfig) {
+  constructor(config: AdtClientConfig, transport?: AdtTransport) {
     this.config = config;
     this.session = new SessionManager("stateless");
-
-    const httpsAgent = this.buildHttpsAgent(config);
-
-    this.axios = axios.create({
-      baseURL: config.baseUrl,
-      timeout: config.requestTimeout,
-      httpsAgent,
-      maxRedirects: 5,
-      validateStatus: () => true, // We handle errors manually
-    });
-
-    this.installInterceptors();
+    this.transport = transport ?? new HttpTransport(config);
   }
 
   // ─── Public API ──────────────────────────────────────────────────────────
@@ -79,7 +60,7 @@ export class AdtHttpClient {
         );
       }
 
-      this.session.updateFromResponseHeaders(response.headers as Record<string, string>);
+      this.session.updateFromResponseHeaders(response.headers);
       this.session.markAuthenticated();
 
       if (this.config.sessionKeepaliveInterval > 0) {
@@ -174,7 +155,7 @@ export class AdtHttpClient {
   /** Create independent clone sharing credentials but not session state */
   createStatelessClone(): AdtHttpClient {
     const cloneConfig: AdtClientConfig = { ...this.config };
-    return new AdtHttpClient(cloneConfig);
+    return new AdtHttpClient(cloneConfig, this.transport.clone());
   }
 
   // ─── Internal ─────────────────────────────────────────────────────────────
@@ -225,7 +206,11 @@ export class AdtHttpClient {
   ): Promise<{ data: T; headers: Record<string, string> }> {
     const headers = this.buildHeaders(options);
 
-    const axiosConfig: AxiosRequestConfig = {
+
+    const start = Date.now();
+    logHttpRequest(method, path, headers);
+
+    const response = await this.transport.request({
       method,
       url: path,
       headers,
@@ -233,20 +218,15 @@ export class AdtHttpClient {
       data: body,
       responseType: options.responseType ?? "text",
       timeout: options.timeout ?? this.config.requestTimeout,
-    };
-
-    const start = Date.now();
-    logHttpRequest(method, path, headers);
-
-    const response: AxiosResponse = await this.axios.request(axiosConfig);
+    });
     const duration = Date.now() - start;
 
     logHttpResponse(method, path, response.status, duration);
     this.session.updateFromResponseHeaders(
-      response.headers as Record<string, string>,
+      response.headers,
     );
 
-    if (this.session.isCsrfError(response.status, response.headers as Record<string, string>)) {
+    if (this.session.isCsrfError(response.status, response.headers)) {
       throw new AdtCsrfError();
     }
 
@@ -257,34 +237,35 @@ export class AdtHttpClient {
         response.status,
         path,
         typeof response.data === "string" ? response.data : JSON.stringify(response.data),
-        response.headers as Record<string, string>,
+        response.headers,
       );
     }
 
-    return { data: response.data as T, headers: response.headers as Record<string, string> };
+    return { data: response.data as T, headers: response.headers };
   }
 
-  private async rawGet(path: string, options: RequestOptions = {}): Promise<AxiosResponse> {
-    const headers = this.buildHeaders(options);
-    return this.axios.request({
+  private async rawGet(path: string, options: RequestOptions = {}): Promise<TransportResponse> {
+    return this.transport.request({
       method: "GET",
       url: path,
-      headers,
+      headers: this.buildHeaders(options),
       responseType: "text",
+      timeout: this.config.requestTimeout,
     });
   }
 
   private async rawDelete(path: string): Promise<void> {
-    await this.axios.request({
+    await this.transport.request({
       method: "DELETE",
       url: path,
       headers: this.buildHeaders({ withCsrf: true }),
       responseType: "text",
+      timeout: this.config.requestTimeout,
     });
   }
 
-  private buildHeaders(options: RequestOptions): AxiosHeaders {
-    const headers: AxiosHeaders = {
+  private buildHeaders(options: RequestOptions): RequestHeaders {
+    const headers: RequestHeaders = {
       "sap-client": this.config.client,
       "Accept-Language": this.config.language,
       "User-Agent": "ABAP Development Tools",
@@ -308,54 +289,6 @@ export class AdtHttpClient {
     }
 
     return headers;
-  }
-
-  private buildHttpsAgent(config: AdtClientConfig): https.Agent | undefined {
-    if (!config.baseUrl.startsWith("https")) return undefined;
-
-    const agentOptions: https.AgentOptions = {
-      rejectUnauthorized: config.tlsVerify,
-      keepAlive: true,
-      maxSockets: 10,
-    };
-
-    if (config.caBundle && config.tlsVerify) {
-      try {
-        agentOptions.ca = fs.readFileSync(config.caBundle);
-      } catch (err) {
-        logger.error("Failed to read CA bundle", { path: config.caBundle, error: err });
-      }
-    }
-
-    return new https.Agent(agentOptions);
-  }
-
-  private installInterceptors(): void {
-    this.axios.interceptors.request.use(
-      (cfg: InternalAxiosRequestConfig) => {
-        // Timeout code injection for observability
-        (cfg as InternalAxiosRequestConfig & { metadata?: { start: number } }).metadata = {
-          start: Date.now(),
-        };
-        return cfg;
-      },
-    );
-
-    this.axios.interceptors.response.use(
-      (response) => response,
-      (error: unknown) => {
-        if (axios.isAxiosError(error)) {
-          if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") {
-            throw new AdtTimeoutError(error.config?.url ?? "unknown");
-          }
-          if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
-            throw new AdtNetworkError(`Cannot connect to SAP: ${error.message}`, error);
-          }
-          throw new AdtNetworkError(error.message, error);
-        }
-        throw error;
-      },
-    );
   }
 
   private async ping(): Promise<void> {
