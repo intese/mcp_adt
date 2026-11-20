@@ -228,6 +228,26 @@ describe("SyntaxService", () => {
     ]);
   });
 
+  it("exposes SAP's per-report status so an empty result can be explained", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_CLEAN_XML });
+    const result = await new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x");
+    expect(result.reports).toEqual([
+      { reporter: "abapCheckRun", status: "processed", statusText: "Processing finished" },
+    ]);
+    expect(result.raw).toBeUndefined();
+  });
+
+  it("passes version into the inline request and returns the raw response on request", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_CLEAN_XML });
+    const result = await new SyntaxService(client).checkSource("x", "/sap/bc/adt/programs/programs/rsparam", {
+      version: "active",
+      includeRaw: true,
+    });
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    expect((mockPost.mock.calls[0] as [string, string])[1]).toContain('chkrun:version="active"');
+    expect(result.raw).toBe(MOCK_SYNTAX_CHECK_REAL_CLEAN_XML);
+  });
+
   it("parses a real response with exactly one message", async () => {
     const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_SINGLE_XML });
     const result = await new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x");
@@ -238,7 +258,7 @@ describe("SyntaxService", () => {
   it("reports a clean real response as clean", async () => {
     const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_CLEAN_XML });
     const result = await new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x");
-    expect(result).toEqual({ hasErrors: false, hasWarnings: false, findings: [] });
+    expect(result).toMatchObject({ hasErrors: false, hasWarnings: false, findings: [] });
   });
 
   it("does not report unrecognisable non-empty output as clean", async () => {

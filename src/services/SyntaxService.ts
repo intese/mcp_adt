@@ -1,5 +1,5 @@
 import type { AdtHttpClient } from "../adt/client.js";
-import type { SyntaxCheckResult, SyntaxCheckFinding } from "../types/index.js";
+import type { SyntaxCheckResult, SyntaxCheckFinding, SyntaxCheckReport } from "../types/index.js";
 import { parseXml, attr, extractText, ensureArray, getNestedValue } from "../utils/xml.js";
 import { logger } from "../utils/logger.js";
 import { validateAdtUri } from "../utils/uri.js";
@@ -29,11 +29,12 @@ export class SyntaxService {
   async checkSource(
     source: string,
     contextUri: string,
+    options: { version?: "active" | "inactive"; includeRaw?: boolean } = {},
   ): Promise<SyntaxCheckResult> {
     validateAdtUri(contextUri);
     logger.debug("Running syntax check on source", { contextUri });
 
-    const body = this.buildSourceCheckRequest(source, contextUri);
+    const body = this.buildSourceCheckRequest(source, contextUri, options.version ?? "inactive");
     const xml = await this.client.post<string>(
       "/sap/bc/adt/checkruns?reporters=abapCheckRun",
       body,
@@ -45,7 +46,8 @@ export class SyntaxService {
       },
     );
 
-    return this.parseCheckResult(xml);
+    const result = this.parseCheckResult(xml);
+    return options.includeRaw ? { ...result, raw: xml } : result;
   }
 
   private buildCheckRequest(objectUri: string, version: string): string {
@@ -63,13 +65,13 @@ export class SyntaxService {
    * adtcore:uri is the object providing the context, chkrun:uri the source part
    * the content replaces.
    */
-  private buildSourceCheckRequest(source: string, contextUri: string): string {
+  private buildSourceCheckRequest(source: string, contextUri: string, version: string): string {
     const objectUri = contextUri.replace(/\/source\/[^/]+$/, "");
     const sourceUri = objectUri === contextUri ? `${contextUri}/source/main` : contextUri;
     const content = Buffer.from(source, "utf8").toString("base64");
     return `<?xml version="1.0" encoding="UTF-8"?>
 <chkrun:checkObjectList xmlns:chkrun="http://www.sap.com/adt/checkrun" xmlns:adtcore="http://www.sap.com/adt/core">
-  <chkrun:checkObject adtcore:uri="${this.escapeXml(objectUri)}" chkrun:version="inactive">
+  <chkrun:checkObject adtcore:uri="${this.escapeXml(objectUri)}" chkrun:version="${version}">
     <chkrun:artifacts>
       <chkrun:artifact chkrun:contentType="text/plain; charset=utf-8" chkrun:uri="${this.escapeXml(sourceUri)}">
         <chkrun:content>${content}</chkrun:content>
@@ -96,11 +98,30 @@ export class SyntaxService {
     }
 
     const findings = this.extractFindings(parsed);
+    const reports = this.extractReports(parsed);
     return {
       hasErrors: findings.some((f) => f.severity === "E"),
       hasWarnings: findings.some((f) => f.severity === "W"),
       findings,
+      ...(reports.length > 0 ? { reports } : {}),
     };
+  }
+
+  private extractReports(parsed: Record<string, unknown>): SyntaxCheckReport[] {
+    return ensureArray(
+      getNestedValue(parsed, ["chkrun:checkRunReports", "chkrun:checkReport"]) as unknown,
+    ).map((r) => {
+      const rep: SyntaxCheckReport = {};
+      const reporter = attr(r, "chkrun:reporter");
+      const status = attr(r, "chkrun:status");
+      const statusText = attr(r, "chkrun:statusText");
+      const triggeringUri = attr(r, "chkrun:triggeringUri");
+      if (reporter) rep.reporter = reporter;
+      if (status) rep.status = status;
+      if (statusText) rep.statusText = statusText;
+      if (triggeringUri) rep.triggeringUri = triggeringUri;
+      return rep;
+    });
   }
 
   private extractFindings(parsed: Record<string, unknown>): SyntaxCheckFinding[] {
