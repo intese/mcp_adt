@@ -14,7 +14,8 @@ export type AdtErrorCode =
   | "ADT_OBJECT_EXISTS"
   | "ADT_PERMISSION_DENIED"
   | "ADT_SERVER_ERROR"
-  | "ADT_NOT_ACCEPTABLE";
+  | "ADT_NOT_ACCEPTABLE"
+  | "ADT_RFC_REQUIRED";
 
 export class AdtBaseError extends Error {
   readonly errorCode: AdtErrorCode;

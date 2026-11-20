@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import readline from "readline";
 import type { AdtClientConfig } from "../types/index.js";
 import type { AdtTransport, TransportRequest, TransportResponse } from "./transport.js";
+import { encodeRfcCall, decodeRfcResult, type RfcCallRequest, type RfcCallResult } from "./rfcCodec.js";
 import { AdtNetworkError, AdtTimeoutError } from "./errors.js";
 import { logger } from "../utils/logger.js";
 
@@ -79,6 +80,19 @@ export class RfcBridgeTransport implements AdtTransport {
         [id, b64(req.method), b64(uri), b64(headers), b64(body)].join("\t") + "\n",
       );
     });
+  }
+
+  async callFunction(req: RfcCallRequest): Promise<RfcCallResult> {
+    const res = await this.request({
+      method: "RFC_CALL",
+      url: req.name,
+      headers: {},
+      data: encodeRfcCall(req),
+      responseType: "text",
+      timeout: req.timeout ?? this.adt.requestTimeout,
+    });
+    if (res.status !== 200) throw new AdtNetworkError(`RFC call ${req.name} returned ${res.status}`);
+    return decodeRfcResult(String(res.data));
   }
 
   clone(): AdtTransport {

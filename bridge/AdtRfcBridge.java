@@ -2,7 +2,10 @@ import com.sap.conn.jco.JCo;
 import com.sap.conn.jco.JCoContext;
 import com.sap.conn.jco.JCoDestination;
 import com.sap.conn.jco.JCoDestinationManager;
+import com.sap.conn.jco.JCoField;
+import com.sap.conn.jco.JCoFieldIterator;
 import com.sap.conn.jco.JCoFunction;
+import com.sap.conn.jco.JCoParameterList;
 import com.sap.conn.jco.JCoStructure;
 import com.sap.conn.jco.JCoTable;
 import com.sap.conn.jco.ext.DestinationDataEventListener;
@@ -13,7 +16,9 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -45,6 +50,55 @@ public class AdtRfcBridge {
   static String b64(String s) { return ENC.encodeToString(s.getBytes(StandardCharsets.UTF_8)); }
   static String str(String b) { return new String(DEC.decode(b), StandardCharsets.UTF_8); }
 
+  /** Table parameter by name, searched in TABLES, CHANGING, EXPORT, IMPORT lists. */
+  static JCoTable table(JCoFunction fn, String name) {
+    JCoParameterList[] lists = {
+      fn.getTableParameterList(), fn.getChangingParameterList(),
+      fn.getExportParameterList(), fn.getImportParameterList()
+    };
+    for (JCoParameterList l : lists) {
+      if (l != null && l.getMetaData().hasField(name)) return l.getTable(name);
+    }
+    throw new IllegalArgumentException("Table parameter not found: " + name);
+  }
+
+  /**
+   * Generic function-module call. Spec lines (tab-separated, values base64):
+   * P name val | A table | F table field val | O table. Result: R table (field val)*
+   */
+  static byte[] callFunction(JCoDestination dest, String name, String spec) throws Exception {
+    JCoFunction fn = dest.getRepository().getFunction(name);
+    if (fn == null) throw new IllegalStateException(name + " not found");
+    List<String> outs = new ArrayList<>();
+    for (String line : spec.split("\n")) {
+      if (line.isEmpty()) continue;
+      String[] p = line.split("\t", -1);
+      switch (p[0]) {
+        case "P": fn.getImportParameterList().setValue(p[1], str(p[2])); break;
+        case "A": table(fn, p[1]).appendRow(); break;
+        case "F": table(fn, p[1]).setValue(p[2], str(p[3])); break;
+        case "O": outs.add(p[1]); break;
+        default: throw new IllegalArgumentException("Bad spec line: " + p[0]);
+      }
+    }
+    fn.execute(dest);
+    StringBuilder sb = new StringBuilder();
+    for (String o : outs) {
+      JCoTable t = table(fn, o);
+      for (int i = 0; i < t.getNumRows(); i++) {
+        t.setRow(i);
+        sb.append("R\t").append(o);
+        JCoFieldIterator it = t.getFieldIterator();
+        while (it.hasNextField()) {
+          JCoField f = it.nextField();
+          sb.append('\t').append(f.getName()).append('\t').append(b64(f.getString()));
+        }
+        sb.append('\n');
+      }
+    }
+    return sb.toString().getBytes(StandardCharsets.UTF_8);
+  }
+
   public static void main(String[] args) throws Exception {
     // stdout is the protocol channel; keep anything else off it
     PrintStream out = new PrintStream(System.out, true, "UTF-8");
@@ -72,6 +126,12 @@ public class AdtRfcBridge {
       try {
         String method = str(f[1]), uri = str(f[2]), headers = str(f[3]);
         byte[] body = DEC.decode(f[4]);
+
+        if (method.equals("RFC_CALL")) {
+          byte[] rb = callFunction(dest, uri, new String(body, StandardCharsets.UTF_8));
+          out.println(id + "\t200\t" + b64("OK") + "\t" + b64("") + "\t" + ENC.encodeToString(rb));
+          continue;
+        }
 
         boolean stateful = false;
         StringBuilder hdr = new StringBuilder();

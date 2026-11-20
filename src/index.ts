@@ -24,6 +24,7 @@ import { CDSService } from "./services/CDSService.js";
 import { TransformationService } from "./services/TransformationService.js";
 import { DependencyService } from "./services/DependencyService.js";
 import { TableService } from "./services/TableService.js";
+import { RfcTableService } from "./services/RfcTableService.js";
 import { ALL_TOOLS, TOOL_MAP } from "./tools/registry.js";
 import { errorResult } from "./tools/helpers.js";
 import { logger } from "./utils/logger.js";
@@ -112,6 +113,7 @@ async function main(): Promise<void> {
     transformationService: new TransformationService(adtClient),
     dependencyService: new DependencyService(adtClient),
     tableService: new TableService(adtClient),
+    rfcTableService: new RfcTableService(adtClient),
   };
 
   // Build MCP tool descriptors from our typed definitions
