@@ -223,6 +223,35 @@ describe("SyntaxService", () => {
     const [, , options] = mockPost.mock.calls[0] as [string, string, { headers: Record<string, string> }];
     expect(options.headers["Content-Type"]).toBe("application/vnd.sap.adt.checkobjects+xml");
   });
+
+  it("sends inline source as a checkObjectList with a base64 artifact", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_CLEAN_XML });
+    const service = new SyntaxService(client);
+    const source = "REPORT zprobe.\nWRITE 'ä <&>'.";
+
+    await service.checkSource(source, "/sap/bc/adt/programs/programs/zr_test");
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const body = (mockPost.mock.calls[0] as [string, string])[1];
+    expect(body).toContain("<chkrun:checkObjectList");
+    expect(body).not.toContain("checkRunRequest");
+    expect(body).toContain('adtcore:uri="/sap/bc/adt/programs/programs/zr_test"');
+    expect(body).toContain('chkrun:uri="/sap/bc/adt/programs/programs/zr_test/source/main"');
+    expect(body).toContain(`<chkrun:content>${Buffer.from(source, "utf8").toString("base64")}</chkrun:content>`);
+  });
+
+  it("does not append /source/main twice when the context is already a source URI", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_CLEAN_XML });
+    const service = new SyntaxService(client);
+
+    await service.checkSource("x", "/sap/bc/adt/programs/includes/zi_test/source/main");
+
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    const body = (mockPost.mock.calls[0] as [string, string])[1];
+    expect(body).toContain('chkrun:uri="/sap/bc/adt/programs/includes/zi_test/source/main"');
+    expect(body).toContain('adtcore:uri="/sap/bc/adt/programs/includes/zi_test"');
+    expect(body).not.toContain("source/main/source/main");
+  });
 });
 
 describe("UnitTestService", () => {
