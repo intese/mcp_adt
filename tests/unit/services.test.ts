@@ -33,6 +33,9 @@ import {
 } from "../mocks/adtResponses.js";
 import type { AdtHttpClient } from "../../src/adt/client.js";
 
+const NOT_PROCESSED_CT_XML = `<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:triggeringUri="/sap/bc/adt/programs/programs/rsparam" chkrun:status="notProcessed" chkrun:statusText="Dirty-Source: Inkorrekter Inhaltstyp text/plain; charset=utf-8, erwartet wurde text/plain"/></chkrun:checkRunReports>`;
+const NOT_PROCESSED_OTHER_XML = `<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="notProcessed" chkrun:statusText="Objekt gesperrt"/></chkrun:checkRunReports>`;
+
 function createMockClient(
   responses: Record<string, string>,
   postSequence?: string[],
@@ -228,6 +231,51 @@ describe("SyntaxService", () => {
     ]);
   });
 
+  it("exposes SAP's per-report status so an empty result can be explained", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_CLEAN_XML });
+    const result = await new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x");
+    expect(result.reports).toEqual([
+      { reporter: "abapCheckRun", status: "processed", statusText: "Processing finished" },
+    ]);
+    expect(result.raw).toBeUndefined();
+  });
+
+  it("passes version into the inline request and returns the raw response on request", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_CLEAN_XML });
+    const result = await new SyntaxService(client).checkSource("x", "/sap/bc/adt/programs/programs/rsparam", {
+      version: "active",
+      includeRaw: true,
+    });
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    expect((mockPost.mock.calls[0] as [string, string])[1]).toContain('chkrun:version="active"');
+    expect(result.raw).toBe(MOCK_SYNTAX_CHECK_REAL_CLEAN_XML);
+  });
+
+  it("throws with SAP's reason when a check report is notProcessed", async () => {
+    const client = createMockClient({ checkruns: NOT_PROCESSED_OTHER_XML });
+    await expect(new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x")).rejects.toThrow(
+      /did not process the syntax check: Objekt gesperrt/,
+    );
+  });
+
+  it("retries inline source with plain text/plain when SAP rejects the charset content type, and remembers it", async () => {
+    const post = jest
+      .fn<(...a: unknown[]) => Promise<string>>()
+      .mockResolvedValueOnce(NOT_PROCESSED_CT_XML)
+      .mockResolvedValue(MOCK_SYNTAX_CHECK_REAL_XML);
+    const service = new SyntaxService({ post } as unknown as AdtHttpClient);
+
+    const first = await service.checkSource("x", "/sap/bc/adt/programs/programs/rsparam");
+    await service.checkSource("x", "/sap/bc/adt/programs/programs/rsparam");
+
+    expect(first.findings).toHaveLength(2);
+    const bodies = post.mock.calls.map((c) => c[1] as string);
+    expect(bodies[0]).toContain('chkrun:contentType="text/plain; charset=utf-8"');
+    expect(bodies[1]).toContain('chkrun:contentType="text/plain"');
+    expect(bodies).toHaveLength(3); // 2 for the first call, 1 for the second (content type remembered)
+    expect(bodies[2]).toContain('chkrun:contentType="text/plain"');
+  });
+
   it("parses a real response with exactly one message", async () => {
     const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_SINGLE_XML });
     const result = await new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x");
@@ -238,7 +286,7 @@ describe("SyntaxService", () => {
   it("reports a clean real response as clean", async () => {
     const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_CLEAN_XML });
     const result = await new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x");
-    expect(result).toEqual({ hasErrors: false, hasWarnings: false, findings: [] });
+    expect(result).toMatchObject({ hasErrors: false, hasWarnings: false, findings: [] });
   });
 
   it("does not report unrecognisable non-empty output as clean", async () => {

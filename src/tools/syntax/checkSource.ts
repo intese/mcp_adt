@@ -8,6 +8,14 @@ const schema = z.object({
   contextUri: AdtUriSchema.describe(
     "ADT URI of the object this source belongs to (provides program type context)",
   ),
+  version: z
+    .enum(["active", "inactive"])
+    .default("inactive")
+    .describe("Version of the context object the check refers to (try 'active' for standard objects)"),
+  includeRaw: z
+    .boolean()
+    .default(false)
+    .describe("Also return SAP's raw response XML (diagnosis: e.g. when an obviously broken source reports no findings)"),
 });
 
 export const syntaxCheckSourceTool: ToolDefinition<typeof schema> = {
@@ -18,7 +26,10 @@ export const syntaxCheckSourceTool: ToolDefinition<typeof schema> = {
   inputSchema: schema,
   handler: async (args, services) => {
     try {
-      const result = await services.syntaxService.checkSource(args.source, args.contextUri);
+      const result = await services.syntaxService.checkSource(args.source, args.contextUri, {
+        version: args.version,
+        includeRaw: args.includeRaw,
+      });
       return successResult(result);
     } catch (err) {
       return errorResult(err, "adt_syntax_check_source");

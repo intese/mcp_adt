@@ -135,6 +135,17 @@ export interface SyntaxCheckResult {
   hasErrors: boolean;
   hasWarnings: boolean;
   findings: SyntaxCheckFinding[];
+  /** What SAP itself reports per check run (status such as "processed"); lets callers see why a result is empty */
+  reports?: SyntaxCheckReport[];
+  /** Raw SAP response, only when requested */
+  raw?: string;
+}
+
+export interface SyntaxCheckReport {
+  reporter?: string;
+  status?: string;
+  statusText?: string;
+  triggeringUri?: string;
 }
 
 // ─── Transport ───────────────────────────────────────────────────────────────
