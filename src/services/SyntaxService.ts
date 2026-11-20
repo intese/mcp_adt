@@ -4,7 +4,13 @@ import { parseXml, attr, extractText, ensureArray, getNestedValue } from "../uti
 import { logger } from "../utils/logger.js";
 import { validateAdtUri } from "../utils/uri.js";
 
+const CT_CHARSET = "text/plain; charset=utf-8";
+const CT_PLAIN = "text/plain";
+
 export class SyntaxService {
+  /** Artifact content type the backend accepted last (older kernels want exactly text/plain). */
+  private artifactContentType = CT_CHARSET;
+
   constructor(private readonly client: AdtHttpClient) {}
 
   async checkObject(objectUri: string, version: "active" | "inactive" = "inactive"): Promise<SyntaxCheckResult> {
@@ -34,20 +40,33 @@ export class SyntaxService {
     validateAdtUri(contextUri);
     logger.debug("Running syntax check on source", { contextUri });
 
-    const body = this.buildSourceCheckRequest(source, contextUri, options.version ?? "inactive");
-    const xml = await this.client.post<string>(
-      "/sap/bc/adt/checkruns?reporters=abapCheckRun",
-      body,
-      {
-        headers: {
-          "Content-Type": "application/vnd.sap.adt.checkobjects+xml",
-          Accept: "application/vnd.sap.adt.checkmessages+xml",
+    const post = async (contentType: string): Promise<string> =>
+      this.client.post<string>(
+        "/sap/bc/adt/checkruns?reporters=abapCheckRun",
+        this.buildSourceCheckRequest(source, contextUri, options.version ?? "inactive", contentType),
+        {
+          headers: {
+            "Content-Type": "application/vnd.sap.adt.checkobjects+xml",
+            Accept: "application/vnd.sap.adt.checkmessages+xml",
+          },
         },
-      },
-    );
+      );
+
+    let xml = await post(this.artifactContentType);
+    if (this.rejectedContentType(xml)) {
+      // Dirty-source content type differs between kernels ("text/plain" vs "text/plain; charset=utf-8")
+      const other = this.artifactContentType === CT_CHARSET ? CT_PLAIN : CT_CHARSET;
+      const retry = await post(other);
+      if (!this.rejectedContentType(retry)) this.artifactContentType = other;
+      xml = retry;
+    }
 
     const result = this.parseCheckResult(xml);
     return options.includeRaw ? { ...result, raw: xml } : result;
+  }
+
+  private rejectedContentType(xml: string): boolean {
+    return /chkrun:status="notProcessed"/.test(xml) && /text\/plain/.test(xml);
   }
 
   private buildCheckRequest(objectUri: string, version: string): string {
@@ -65,7 +84,12 @@ export class SyntaxService {
    * adtcore:uri is the object providing the context, chkrun:uri the source part
    * the content replaces.
    */
-  private buildSourceCheckRequest(source: string, contextUri: string, version: string): string {
+  private buildSourceCheckRequest(
+    source: string,
+    contextUri: string,
+    version: string,
+    contentType: string,
+  ): string {
     const objectUri = contextUri.replace(/\/source\/[^/]+$/, "");
     const sourceUri = objectUri === contextUri ? `${contextUri}/source/main` : contextUri;
     const content = Buffer.from(source, "utf8").toString("base64");
@@ -73,7 +97,7 @@ export class SyntaxService {
 <chkrun:checkObjectList xmlns:chkrun="http://www.sap.com/adt/checkrun" xmlns:adtcore="http://www.sap.com/adt/core">
   <chkrun:checkObject adtcore:uri="${this.escapeXml(objectUri)}" chkrun:version="${version}">
     <chkrun:artifacts>
-      <chkrun:artifact chkrun:contentType="text/plain; charset=utf-8" chkrun:uri="${this.escapeXml(sourceUri)}">
+      <chkrun:artifact chkrun:contentType="${contentType}" chkrun:uri="${this.escapeXml(sourceUri)}">
         <chkrun:content>${content}</chkrun:content>
       </chkrun:artifact>
     </chkrun:artifacts>
@@ -99,6 +123,13 @@ export class SyntaxService {
 
     const findings = this.extractFindings(parsed);
     const reports = this.extractReports(parsed);
+    // SAP did not run the check (e.g. rejected dirty-source content type): that is not "no errors"
+    const skipped = reports.find((r) => r.status === "notProcessed");
+    if (skipped) {
+      throw new Error(
+        `SAP did not process the syntax check: ${skipped.statusText || "no reason given"}`,
+      );
+    }
     return {
       hasErrors: findings.some((f) => f.severity === "E"),
       hasWarnings: findings.some((f) => f.severity === "W"),
