@@ -72,6 +72,8 @@ import { compareXmlStructuresTool } from "./transformations/compareXml.js";
 
 // Table Data
 import { runSqlQueryTool } from "./table/query.js";
+import { getTableFieldsTool } from "./table/getFields.js";
+import { readTableTool } from "./table/readTable.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function asTool(t: ToolDefinition<any>): AnyToolDefinition {
@@ -151,6 +153,8 @@ export const ALL_TOOLS: AnyToolDefinition[] = [
 
   // Table Data
   asTool(runSqlQueryTool),
+  asTool(getTableFieldsTool),
+  asTool(readTableTool),
 ];
 
 export const TOOL_MAP = new Map<string, AnyToolDefinition>(

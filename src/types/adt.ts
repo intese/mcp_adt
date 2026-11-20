@@ -453,3 +453,38 @@ export interface RunSqlQueryOptions {
   sql: string;
   maxRows?: number;
 }
+
+// ─── RFC table access (SAP_TRANSPORT=rfc) ──────────────────────────────────
+
+export interface RfcTableField {
+  name: string;
+  type: string;
+  length: number;
+  decimals: number;
+  key: boolean;
+  description: string;
+  dataElement: string;
+}
+
+export interface RfcTableFieldsResult {
+  table: string;
+  fields: RfcTableField[];
+}
+
+export interface RfcReadTableOptions {
+  table: string;
+  /** Columns to return; empty/omitted = all (limited by the 512-byte RFC_READ_TABLE row width) */
+  fields?: string[];
+  /** Open SQL WHERE condition without the keyword WHERE */
+  where?: string;
+  maxRows?: number;
+  skipRows?: number;
+}
+
+export interface RfcReadTableResult {
+  table: string;
+  columns: string[];
+  rows: Record<string, string>[];
+  /** true when as many rows as requested came back, i.e. more may exist */
+  truncated: boolean;
+}

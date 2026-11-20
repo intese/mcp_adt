@@ -2,10 +2,12 @@ import type { AdtClientConfig, SessionInfo } from "../types/index.js";
 import { SessionManager } from "./session.js";
 import {
   AdtAuthenticationError,
+  AdtBaseError,
   AdtCsrfError,
   AdtNetworkError,
   mapHttpError,
 } from "./errors.js";
+import type { RfcCallRequest, RfcCallResult } from "./rfcCodec.js";
 import { HttpTransport, type AdtTransport, type TransportResponse } from "./transport.js";
 import { logger, logHttpRequest, logHttpResponse } from "../utils/logger.js";
 
@@ -142,6 +144,17 @@ export class AdtHttpClient {
 
   setSessionType(type: "stateful" | "stateless"): void {
     this.session.setType(type);
+  }
+
+  /** Call an RFC function module directly. Requires SAP_TRANSPORT=rfc. */
+  async callFunction(req: RfcCallRequest): Promise<RfcCallResult> {
+    if (!this.transport.callFunction) {
+      throw new AdtBaseError(
+        "ADT_RFC_REQUIRED",
+        "This tool needs SAP_TRANSPORT=rfc (direct RFC function-module calls); the HTTP transport cannot do it.",
+      );
+    }
+    return this.transport.callFunction(req);
   }
 
   getUsername(): string {

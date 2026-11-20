@@ -5,6 +5,7 @@ import axios, {
 import https from "https";
 import fs from "fs";
 import type { AdtClientConfig } from "../types/index.js";
+import type { RfcCallRequest, RfcCallResult } from "./rfcCodec.js";
 import { AdtNetworkError, AdtTimeoutError } from "./errors.js";
 import { logger } from "../utils/logger.js";
 
@@ -31,6 +32,8 @@ export interface TransportResponse {
 
 export interface AdtTransport {
   request(req: TransportRequest): Promise<TransportResponse>;
+  /** Generic RFC function-module call; only implemented by the RFC bridge transport. */
+  callFunction?(req: RfcCallRequest): Promise<RfcCallResult>;
   /** Independent transport with the same credentials but no shared session state. */
   clone(): AdtTransport;
   close?(): Promise<void>;
