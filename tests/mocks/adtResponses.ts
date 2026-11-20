@@ -333,3 +333,31 @@ export const MOCK_TABLE_QUERY_EMPTY_XML = `<?xml version="1.0" encoding="utf-8"?
     <dataPreview:dataSet/>
   </dataPreview:columns>
 </dataPreview:tableData>`;
+
+// Shape sent by a real SAP system (checkmessages+xml): messages live in checkMessageList,
+// text in chkrun:shortText, position as #start=line,column in chkrun:uri.
+export const MOCK_SYNTAX_CHECK_REAL_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun">
+  <chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:triggeringUri="/sap/bc/adt/programs/programs/rsparam" chkrun:status="processed" chkrun:statusText="Processing finished">
+    <chkrun:checkMessageList>
+      <chkrun:checkMessage chkrun:uri="/sap/bc/adt/programs/programs/rsparam/source/main#start=3,0" chkrun:type="E" chkrun:shortText="&quot;LV_X&quot; is not defined."/>
+      <chkrun:checkMessage chkrun:uri="/sap/bc/adt/programs/programs/rsparam/source/main#start=4,5" chkrun:type="W" chkrun:shortText="Statement is not accessible."/>
+    </chkrun:checkMessageList>
+  </chkrun:checkReport>
+</chkrun:checkRunReports>`;
+
+export const MOCK_SYNTAX_CHECK_REAL_CLEAN_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun">
+  <chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="processed" chkrun:statusText="Processing finished">
+    <chkrun:checkMessageList/>
+  </chkrun:checkReport>
+</chkrun:checkRunReports>`;
+
+export const MOCK_SYNTAX_CHECK_REAL_SINGLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun">
+  <chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="processed">
+    <chkrun:checkMessageList>
+      <chkrun:checkMessage chkrun:uri="/sap/bc/adt/programs/programs/zr_x/source/main#start=7,2" chkrun:type="E" chkrun:shortText="Syntax error"/>
+    </chkrun:checkMessageList>
+  </chkrun:checkReport>
+</chkrun:checkRunReports>`;

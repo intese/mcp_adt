@@ -83,46 +83,72 @@ export class SyntaxService {
     if (!xml || xml.trim() === "") {
       return { hasErrors: false, hasWarnings: false, findings: [] };
     }
+    logger.debug("Syntax check raw response", { xml });
 
-    try {
-      const parsed = parseXml(xml);
-      const findings = this.extractFindings(parsed);
-
-      return {
-        hasErrors: findings.some((f) => f.severity === "E"),
-        hasWarnings: findings.some((f) => f.severity === "W"),
-        findings,
-      };
-    } catch {
-      return { hasErrors: false, hasWarnings: false, findings: [] };
+    const parsed = parseXml(xml);
+    const known =
+      "chkrun:checkRunReports" in parsed ||
+      "checkRun:checkResultList" in parsed ||
+      "checkResultList" in parsed;
+    if (!known) {
+      // Never report output we cannot read as "no errors"
+      throw new Error(`Unrecognised syntax check response: ${xml.trim().slice(0, 300)}`);
     }
+
+    const findings = this.extractFindings(parsed);
+    return {
+      hasErrors: findings.some((f) => f.severity === "E"),
+      hasWarnings: findings.some((f) => f.severity === "W"),
+      findings,
+    };
   }
 
   private extractFindings(parsed: Record<string, unknown>): SyntaxCheckFinding[] {
-    // SAP returns: <chkrun:checkRunReports><chkrun:checkReport><chkrun:findings><chkrun:finding .../>
-    // Try multiple possible XML paths for findings
+    // Real SAP response (checkmessages+xml):
+    //   chkrun:checkRunReports > chkrun:checkReport > chkrun:checkMessageList > chkrun:checkMessage
+    //   attributes chkrun:type / chkrun:shortText / chkrun:uri="<uri>#start=<line>,<column>"
+    const reports = ensureArray(
+      getNestedValue(parsed, ["chkrun:checkRunReports", "chkrun:checkReport"]) as unknown,
+    );
+    const messages = reports.flatMap((r) =>
+      ensureArray(
+        getNestedValue(r as Record<string, unknown>, [
+          "chkrun:checkMessageList",
+          "chkrun:checkMessage",
+        ]) as unknown,
+      ),
+    );
+    if (messages.length > 0) {
+      return messages.map((node) => {
+        const rawUri = attr(node, "chkrun:uri");
+        const m = rawUri.match(/^([^#]*)#start=(\d+)(?:,(\d+))?/);
+        return {
+          severity: (attr(node, "chkrun:type") || "I") as SyntaxCheckFinding["severity"],
+          line: m ? parseInt(m[2]!, 10) : 0,
+          column: m && m[3] ? parseInt(m[3], 10) : 0,
+          message: attr(node, "chkrun:shortText") || extractText(node),
+          uri: (m ? m[1] : rawUri) || undefined,
+        };
+      });
+    }
+
+    // Legacy/alternative shapes (kept for compatibility)
     const findingNodes = ensureArray(
       getNestedValue(parsed, [
-        "chkrun:checkRunReports",
-        "chkrun:checkReport",
-        "chkrun:findings",
-        "chkrun:finding",
+        "checkRun:checkResultList",
+        "checkRun:checkResult",
+        "checkRun:findings",
+        "checkRun:finding",
       ]) as unknown ??
-        getNestedValue(parsed, [
-          "checkRun:checkResultList",
-          "checkRun:checkResult",
-          "checkRun:findings",
-          "checkRun:finding",
-        ]) as unknown ??
         getNestedValue(parsed, ["checkResultList", "checkResult", "findings", "finding"]) as unknown,
     );
 
     return findingNodes.map((node) => ({
-      severity: (attr(node, "chkrun:type") || attr(node, "checkRun:type") || attr(node, "type") || "I") as SyntaxCheckFinding["severity"],
-      line: parseInt(attr(node, "chkrun:line") || attr(node, "checkRun:line") || attr(node, "line") || "0", 10),
-      column: parseInt(attr(node, "chkrun:column") || attr(node, "checkRun:column") || attr(node, "column") || "0", 10),
-      message: attr(node, "chkrun:text") || attr(node, "checkRun:text") || attr(node, "text") || extractText(node),
-      uri: attr(node, "chkrun:uri") || attr(node, "checkRun:uri") || attr(node, "uri") || undefined,
+      severity: (attr(node, "checkRun:type") || attr(node, "type") || "I") as SyntaxCheckFinding["severity"],
+      line: parseInt(attr(node, "checkRun:line") || attr(node, "line") || "0", 10),
+      column: parseInt(attr(node, "checkRun:column") || attr(node, "column") || "0", 10),
+      message: attr(node, "checkRun:text") || attr(node, "text") || extractText(node),
+      uri: attr(node, "checkRun:uri") || attr(node, "uri") || undefined,
     }));
   }
 

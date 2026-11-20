@@ -16,6 +16,9 @@ import {
   MOCK_ACTIVATION_ERROR_WRAPPED_TEXT_XML,
   MOCK_SYNTAX_CHECK_CLEAN_XML,
   MOCK_SYNTAX_CHECK_ERROR_XML,
+  MOCK_SYNTAX_CHECK_REAL_XML,
+  MOCK_SYNTAX_CHECK_REAL_CLEAN_XML,
+  MOCK_SYNTAX_CHECK_REAL_SINGLE_XML,
   MOCK_UNIT_TEST_RESULT_XML,
   MOCK_UNIT_TEST_FAILURE_XML,
   MOCK_UNIT_TEST_EMPTY_XML,
@@ -211,6 +214,38 @@ describe("SyntaxService", () => {
     expect(result.findings[0]?.severity).toBe("E");
     expect(result.findings[0]?.line).toBe(5);
     expect(result.findings[0]?.column).toBe(10);
+  });
+
+  it("parses the real checkRunReports/checkMessageList response with line and column from the uri fragment", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_XML });
+    const result = await new SyntaxService(client).checkSource("x", "/sap/bc/adt/programs/programs/rsparam");
+
+    expect(result.hasErrors).toBe(true);
+    expect(result.hasWarnings).toBe(true);
+    expect(result.findings).toEqual([
+      { severity: "E", line: 3, column: 0, message: '"LV_X" is not defined.', uri: "/sap/bc/adt/programs/programs/rsparam/source/main" },
+      { severity: "W", line: 4, column: 5, message: "Statement is not accessible.", uri: "/sap/bc/adt/programs/programs/rsparam/source/main" },
+    ]);
+  });
+
+  it("parses a real response with exactly one message", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_SINGLE_XML });
+    const result = await new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x");
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({ severity: "E", line: 7, column: 2 });
+  });
+
+  it("reports a clean real response as clean", async () => {
+    const client = createMockClient({ checkruns: MOCK_SYNTAX_CHECK_REAL_CLEAN_XML });
+    const result = await new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x");
+    expect(result).toEqual({ hasErrors: false, hasWarnings: false, findings: [] });
+  });
+
+  it("does not report unrecognisable non-empty output as clean", async () => {
+    const client = createMockClient({ checkruns: "<html><body>Gateway error</body></html>" });
+    await expect(new SyntaxService(client).checkObject("/sap/bc/adt/programs/programs/zr_x")).rejects.toThrow(
+      /unrecognised syntax check response/i,
+    );
   });
 
   it("sends the only content type SAP accepts when checking inline source", async () => {
