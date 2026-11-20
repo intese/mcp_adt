@@ -57,17 +57,26 @@ export class SyntaxService {
 </chkrun:checkObjectList>`;
   }
 
+  /**
+   * Inline-source check: a checkObjectList whose checkObject carries the unsaved
+   * source as a base64 artifact (format as used by Eclipse ADT / abap-adt-api).
+   * adtcore:uri is the object providing the context, chkrun:uri the source part
+   * the content replaces.
+   */
   private buildSourceCheckRequest(source: string, contextUri: string): string {
-    const escaped = this.escapeXml(source);
+    const objectUri = contextUri.replace(/\/source\/[^/]+$/, "");
+    const sourceUri = objectUri === contextUri ? `${contextUri}/source/main` : contextUri;
+    const content = Buffer.from(source, "utf8").toString("base64");
     return `<?xml version="1.0" encoding="UTF-8"?>
-<chkrun:checkRunRequest xmlns:chkrun="http://www.sap.com/adt/checkrun">
-  <chkrun:checkObjects>
-    <chkrun:checkObject adtcore:uri="${this.escapeXml(contextUri)}"
-      xmlns:adtcore="http://www.sap.com/adt/core">
-      <chkrun:source>${escaped}</chkrun:source>
-    </chkrun:checkObject>
-  </chkrun:checkObjects>
-</chkrun:checkRunRequest>`;
+<chkrun:checkObjectList xmlns:chkrun="http://www.sap.com/adt/checkrun" xmlns:adtcore="http://www.sap.com/adt/core">
+  <chkrun:checkObject adtcore:uri="${this.escapeXml(objectUri)}" chkrun:version="inactive">
+    <chkrun:artifacts>
+      <chkrun:artifact chkrun:contentType="text/plain; charset=utf-8" chkrun:uri="${this.escapeXml(sourceUri)}">
+        <chkrun:content>${content}</chkrun:content>
+      </chkrun:artifact>
+    </chkrun:artifacts>
+  </chkrun:checkObject>
+</chkrun:checkObjectList>`;
   }
 
   private parseCheckResult(xml: string): SyntaxCheckResult {
