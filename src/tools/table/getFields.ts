@@ -4,6 +4,11 @@ import { successResult, errorResult } from "../helpers.js";
 
 const schema = z.object({
   table: z.string().min(1).max(30).describe("Table, structure or view name, e.g. VBRK or ZBC_STRG_TAB"),
+  fields: z
+    .array(z.string().min(1).max(30))
+    .max(200)
+    .optional()
+    .describe("Only return these fields (case-insensitive). Recommended for large tables such as VBRK/VBRP; unknown names are listed in unknownFields."),
 });
 
 export const getTableFieldsTool: ToolDefinition<typeof schema> = {
@@ -15,7 +20,7 @@ export const getTableFieldsTool: ToolDefinition<typeof schema> = {
   inputSchema: schema,
   handler: async (args, services) => {
     try {
-      return successResult(await services.rfcTableService.getTableFields(args.table));
+      return successResult(await services.rfcTableService.getTableFields(args.table, args.fields));
     } catch (err) {
       return errorResult(err, "adt_get_table_fields");
     }
