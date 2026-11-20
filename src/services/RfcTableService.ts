@@ -21,7 +21,7 @@ function checkName(kind: "table" | "field", v: string): string {
 export class RfcTableService {
   constructor(private readonly client: AdtHttpClient) {}
 
-  async getTableFields(table: string): Promise<RfcTableFieldsResult> {
+  async getTableFields(table: string, fieldFilter?: string[]): Promise<RfcTableFieldsResult> {
     const tabname = checkName("table", table);
     const res = await this.client.callFunction({
       name: "DDIF_FIELDINFO_GET",
@@ -30,9 +30,7 @@ export class RfcTableService {
     });
     const rows = res.tables["DFIES_TAB"] ?? [];
     if (rows.length === 0) throw new Error(`SAP returned no fields for ${tabname}`);
-    return {
-      table: tabname,
-      fields: rows.map((r) => ({
+    const all = rows.map((r) => ({
         name: r["FIELDNAME"] ?? "",
         type: r["DATATYPE"] ?? "",
         length: parseInt(r["LENG"] ?? "0", 10) || 0,
@@ -40,8 +38,15 @@ export class RfcTableService {
         key: (r["KEYFLAG"] ?? "").trim() === "X",
         description: (r["FIELDTEXT"] ?? "").trim(),
         dataElement: (r["ROLLNAME"] ?? "").trim(),
-      })),
-    };
+    }));
+    if (!fieldFilter || fieldFilter.length === 0) {
+      return { table: tabname, totalFields: all.length, fields: all };
+    }
+    const wanted = new Set(fieldFilter.map((f) => checkName("field", f)));
+    const fields = all.filter((f) => wanted.has(f.name.toUpperCase()));
+    const found = new Set(fields.map((f) => f.name.toUpperCase()));
+    const unknownFields = [...wanted].filter((f) => !found.has(f));
+    return { table: tabname, totalFields: all.length, fields, unknownFields };
   }
 
   async readTable(options: RfcReadTableOptions): Promise<RfcReadTableResult> {

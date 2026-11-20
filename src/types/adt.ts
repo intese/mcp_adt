@@ -468,7 +468,11 @@ export interface RfcTableField {
 
 export interface RfcTableFieldsResult {
   table: string;
+  /** Number of fields of the table before any filter */
+  totalFields: number;
   fields: RfcTableField[];
+  /** Requested filter names that do not exist in the table (only set when a filter was given) */
+  unknownFields?: string[];
 }
 
 export interface RfcReadTableOptions {

@@ -62,6 +62,28 @@ describe("RfcTableService.getTableFields", () => {
     expect(res.fields[2]!.decimals).toBe(2);
   });
 
+  it("filters fields case-insensitively and reports unknown names", async () => {
+    const { client } = mockClient({
+      DFIES_TAB: [
+        { FIELDNAME: "MANDT", DATATYPE: "CLNT", LENG: "000003", KEYFLAG: "X" },
+        { FIELDNAME: "VBELN", DATATYPE: "CHAR", LENG: "000010", KEYFLAG: "X" },
+        { FIELDNAME: "NETWR", DATATYPE: "CURR", LENG: "000015", KEYFLAG: "" },
+      ],
+    });
+    const res = await new RfcTableService(client).getTableFields("VBRK", ["netwr", "vbeln", "nope"]);
+    expect(res.fields.map((f) => f.name)).toEqual(["VBELN", "NETWR"]);
+    expect(res.unknownFields).toEqual(["NOPE"]);
+    expect(res.totalFields).toBe(3);
+  });
+
+  it("returns all fields and no unknownFields without a filter", async () => {
+    const { client } = mockClient({ DFIES_TAB: [{ FIELDNAME: "A", DATATYPE: "CHAR", LENG: "1" }] });
+    const res = await new RfcTableService(client).getTableFields("T");
+    expect(res.fields).toHaveLength(1);
+    expect(res.unknownFields).toBeUndefined();
+    expect(res.totalFields).toBe(1);
+  });
+
   it("rejects invalid table names before calling SAP", async () => {
     const { client, callFunction } = mockClient({});
     await expect(new RfcTableService(client).getTableFields("VBRK; DROP")).rejects.toThrow(/table name/i);
