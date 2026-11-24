@@ -142,18 +142,45 @@ export class ObjectService {
 
   // ─── Create ───────────────────────────────────────────────────────────────
 
+  /**
+   * POSTs a create request with the vendor-specific content type first. If the backend
+   * has no content handler for it ("Kein Content-Behandler/Datentyp ... gefunden"),
+   * retry once with the generic `application/*` that abap-adt-api (objectcreator.ts)
+   * sends; 740 accepts it for interfaces, but NOT for classes/programs (use the exact
+   * vendor types there). Other errors are never retried.
+   */
+  private async postCreate(
+    uri: string,
+    body: string,
+    vendorType: string,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<void> {
+    try {
+      await this.client.post<string>(uri, body, {
+        headers: { "Content-Type": vendorType, ...extraHeaders },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (!/content[- ]?(handler|type)|inhaltstyp|medientyp|content-behandler|datentyp/i.test(msg)) throw err;
+      logger.warn("Create rejected for vendor content type, retrying with application/*", {
+        vendorType,
+      });
+      await this.client.post<string>(uri, body, {
+        headers: { "Content-Type": "application/*" },
+      });
+    }
+  }
+
   async createClass(options: CreateClassOptions): Promise<AdtObjectReference> {
     const uri = withCorrNr(
       `/sap/bc/adt/oo/classes?packageName=${encodeURIComponent(options.packageName)}`,
       options.transportNumber,
     );
     const body = this.buildClassXml(options);
-    await this.client.post<string>(uri, body, {
-      headers: {
-        "Content-Type": "application/vnd.sap.adt.classes+xml",
-        Accept: "application/vnd.sap.adt.classes+xml",
-      },
-    });
+    // Unversioned oo.classes type: the only one SAP_BASIS 740 SP04 accepts (it rejects
+    // application/*); 750/758 accept it too (arc-mcp/arc-1, issue #907). The earlier
+    // "application/vnd.sap.adt.classes+xml" is not a real ADT media type.
+    await this.postCreate(uri, body, "application/vnd.sap.adt.oo.classes+xml");
     const resultUri = classUri(options.name);
     logger.info("Class created", { name: options.name, uri: resultUri });
 
@@ -203,9 +230,7 @@ export class ObjectService {
       options.transportNumber,
     );
     const body = this.buildInterfaceXml(options);
-    await this.client.post<string>(uri, body, {
-      headers: { "Content-Type": "application/vnd.sap.adt.interfaces+xml" },
-    });
+    await this.postCreate(uri, body, "application/vnd.sap.adt.interfaces+xml");
     const resultUri = interfaceUri(options.name);
     logger.info("Interface created", { name: options.name });
     return { uri: resultUri, name: options.name, type: "INTF/OI" };
@@ -217,9 +242,7 @@ export class ObjectService {
       options.transportNumber,
     );
     const body = this.buildReportXml(options);
-    await this.client.post<string>(uri, body, {
-      headers: { "Content-Type": "application/vnd.sap.adt.programs.programs+xml" },
-    });
+    await this.postCreate(uri, body, "application/vnd.sap.adt.programs.programs+xml");
     const resultUri = reportUri(options.name);
     logger.info("Report created", { name: options.name });
     return { uri: resultUri, name: options.name, type: "PROG/P" };
@@ -231,9 +254,7 @@ export class ObjectService {
       options.transportNumber,
     );
     const body = this.buildFunctionGroupXml(options);
-    await this.client.post<string>(uri, body, {
-      headers: { "Content-Type": "application/vnd.sap.adt.functions.groups+xml" },
-    });
+    await this.postCreate(uri, body, "application/vnd.sap.adt.functions.groups+xml");
     const resultUri = functionGroupUri(options.name);
     logger.info("Function group created", { name: options.name });
     return { uri: resultUri, name: options.name, type: "FUGR/F" };
@@ -245,9 +266,7 @@ export class ObjectService {
       options.transportNumber,
     );
     const body = this.buildFunctionModuleXml(options);
-    await this.client.post<string>(uri, body, {
-      headers: { "Content-Type": "application/vnd.sap.adt.functions.fmodules+xml" },
-    });
+    await this.postCreate(uri, body, "application/vnd.sap.adt.functions.fmodules+xml");
     const resultUri = functionModuleUri(options.groupName, options.name);
     logger.info("Function module created", { name: options.name });
     return { uri: resultUri, name: options.name, type: "FUGR/FF" };
@@ -342,7 +361,9 @@ export class ObjectService {
   xmlns:adtcore="http://www.sap.com/adt/core"
   adtcore:description="${this.escapeXml(options.description)}"
   adtcore:language="${lang}"
+  adtcore:masterLanguage="${lang}"
   adtcore:name="${name}"
+  adtcore:type="CLAS/OC"
   adtcore:responsible="${responsible}"
   class:final="${isFinal}"
   class:abstract="${isAbstract}"
@@ -364,7 +385,9 @@ export class ObjectService {
   xmlns:adtcore="http://www.sap.com/adt/core"
   adtcore:description="${this.escapeXml(options.description)}"
   adtcore:language="${lang}"
-  adtcore:name="${name}">
+  adtcore:masterLanguage="${lang}"
+  adtcore:name="${name}"
+  adtcore:type="INTF/OI">
   <adtcore:packageRef adtcore:name="${pkg}"/>
 </intf:abapInterface>`;
   }

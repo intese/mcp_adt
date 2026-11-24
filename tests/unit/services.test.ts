@@ -3,6 +3,7 @@ import { ActivationService } from "../../src/services/ActivationService.js";
 import { SyntaxService } from "../../src/services/SyntaxService.js";
 import { UnitTestService } from "../../src/services/UnitTestService.js";
 import { ObjectService } from "../../src/services/ObjectService.js";
+import { AdtBaseError } from "../../src/adt/errors.js";
 import { LockService } from "../../src/services/LockService.js";
 import { ATCService } from "../../src/services/ATCService.js";
 import { TransportService } from "../../src/services/TransportService.js";
@@ -460,6 +461,64 @@ describe("ObjectService", () => {
     const [, body] = mockPost.mock.calls[0] as [string, string];
     expect(body).toContain('adtcore:responsible="TESTUSER"');
     expect(body).not.toContain('adtcore:responsible=""');
+  });
+
+  it("retries creation with the generic application/* type when the backend has no content handler for the vendor type", async () => {
+    const client = createMockClient({});
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    mockPost.mockImplementationOnce(async () => {
+      throw new AdtBaseError(
+        "ADT_UNKNOWN_ERROR",
+        "Kein Content-Behandler für Content-Typ 'application/vnd.sap.adt.oo.classes+xml' gefunden",
+      );
+    });
+    const service = new ObjectService(client, new LockService(client));
+
+    const ref = await service.createClass({
+      name: "ZCL_TEST",
+      description: "Test class",
+      packageName: "$TMP",
+    });
+
+    expect(ref.name).toBe("ZCL_TEST");
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    const first = mockPost.mock.calls[0] as [string, string, { headers: Record<string, string> }];
+    const second = mockPost.mock.calls[1] as [string, string, { headers: Record<string, string> }];
+    // SAP_BASIS 740 SP04 only knows the unversioned oo.classes type for class creation.
+    expect(first[2].headers["Content-Type"]).toBe("application/vnd.sap.adt.oo.classes+xml");
+    expect(first[2].headers["Accept"]).toBeUndefined();
+    expect(second[2].headers["Content-Type"]).toBe("application/*");
+    expect(second[1]).toBe(first[1]);
+  });
+
+  it("does not retry creation for unrelated errors", async () => {
+    const client = createMockClient({});
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    mockPost.mockImplementationOnce(async () => {
+      throw new AdtBaseError("ADT_PERMISSION_DENIED", "Objektkatalogeintrag R3TR INTF ZX existiert nicht");
+    });
+    const service = new ObjectService(client, new LockService(client));
+
+    await expect(
+      service.createInterface({ name: "ZX", description: "d", packageName: "ZPKG" }),
+    ).rejects.toThrow("Objektkatalogeintrag");
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("class and interface create bodies carry adtcore:type and masterLanguage like the reference implementations (needed on 740 to derive the TADIR entry)", async () => {
+    const client = createMockClient({});
+    const service = new ObjectService(client, new LockService(client));
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+
+    await service.createClass({ name: "ZCL_TEST", description: "d", packageName: "$TMP" });
+    await service.createInterface({ name: "ZIF_TEST", description: "d", packageName: "$TMP" });
+
+    const [, classBody] = mockPost.mock.calls[0] as [string, string];
+    const [, intfBody] = mockPost.mock.calls[1] as [string, string];
+    expect(classBody).toContain('adtcore:type="CLAS/OC"');
+    expect(classBody).toMatch(/adtcore:masterLanguage="[A-Z]{2}"/);
+    expect(intfBody).toContain('adtcore:type="INTF/OI"');
+    expect(intfBody).toMatch(/adtcore:masterLanguage="[A-Z]{2}"/);
   });
 
   it("honors an explicitly supplied responsible value", async () => {
