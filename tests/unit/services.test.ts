@@ -3,7 +3,8 @@ import { ActivationService } from "../../src/services/ActivationService.js";
 import { SyntaxService } from "../../src/services/SyntaxService.js";
 import { UnitTestService } from "../../src/services/UnitTestService.js";
 import { ObjectService } from "../../src/services/ObjectService.js";
-import { AdtBaseError } from "../../src/adt/errors.js";
+import { AdtBaseError, AdtNotFoundError } from "../../src/adt/errors.js";
+import { TransformationService } from "../../src/services/TransformationService.js";
 import { LockService } from "../../src/services/LockService.js";
 import { ATCService } from "../../src/services/ATCService.js";
 import { TransportService } from "../../src/services/TransportService.js";
@@ -1015,5 +1016,41 @@ describe("PackageService", () => {
     const mockGet = (client as unknown as { get: ReturnType<typeof jest.fn> }).get;
     const [, options] = mockGet.mock.calls[0] as [string, { headers: Record<string, string> }];
     expect(options.headers.Accept).toBe("application/xml");
+  });
+});
+
+describe("TransformationService create errors", () => {
+  const opts = { name: "ZST_X", description: "d", packageName: "$TMP", transformationType: "ST" as const };
+
+  const cases: Array<["createSimpleTransformation" | "createXslt", string]> = [
+    ["createSimpleTransformation", "Simple Transformation"],
+    ["createXslt", "XSLT"],
+  ];
+  it.each(cases)("%s explains that the ADT endpoint is missing instead of a bare not-found", async (method, label) => {
+    const client = createMockClient({});
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    mockPost.mockImplementationOnce(async () => {
+      throw new AdtNotFoundError("/sap/bc/adt/programs/transforms?packageName=%24TMP");
+    });
+    const service = new TransformationService(client);
+
+    const err = await service[method](opts).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(AdtBaseError);
+    const e = err as AdtBaseError;
+    expect(e.errorCode).toBe("ADT_NOT_FOUND");
+    expect(e.message).toContain(label);
+    expect(e.message).toMatch(/SE80|STRANS/);
+    expect(e.message).toContain("/sap/bc/adt/programs/transforms");
+  });
+
+  it("does not rewrite other errors", async () => {
+    const client = createMockClient({});
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    mockPost.mockImplementationOnce(async () => {
+      throw new AdtBaseError("ADT_PERMISSION_DENIED", "Fehlende Entwicklerlizenz");
+    });
+    const service = new TransformationService(client);
+    await expect(service.createXslt(opts)).rejects.toThrow("Fehlende Entwicklerlizenz");
   });
 });

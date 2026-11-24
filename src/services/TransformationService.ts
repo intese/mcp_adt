@@ -1,4 +1,5 @@
 import type { AdtHttpClient } from "../adt/client.js";
+import { AdtBaseError } from "../adt/errors.js";
 import type { CreateTransformationOptions, AdtObjectReference } from "../types/index.js";
 import { parseXml } from "../utils/xml.js";
 import { logger } from "../utils/logger.js";
@@ -6,6 +7,32 @@ import { transformationUri, sourceUri, withCorrNr } from "../utils/uri.js";
 
 export class TransformationService {
   constructor(private readonly client: AdtHttpClient) {}
+
+  /**
+   * ST/XSLT creation is unverified against any ADT backend (see docs/adt-endpoints.md).
+   * A 404 on the collection means the endpoint is not served at all; observed on SAP_BASIS
+   * 740 SP04, whose ADT discovery has no transformation collection. Say so, instead of a
+   * bare "Object not found" that reads like a missing package or object.
+   */
+  private async postCreate(uri: string, body: string, label: string): Promise<void> {
+    try {
+      await this.client.post<string>(uri, body, {
+        headers: { "Content-Type": "application/vnd.sap.adt.programs.transforms+xml" },
+      });
+    } catch (err) {
+      if (err instanceof AdtBaseError && err.errorCode === "ADT_NOT_FOUND") {
+        const path = uri.split("?")[0] ?? uri;
+        throw new AdtBaseError(
+          "ADT_NOT_FOUND",
+          `Creating a ${label} via ADT is not available on this backend: ${path} is not served ` +
+            `(older systems such as SAP_BASIS 740 have no ADT endpoint for transformations). ` +
+            `Create it in SE80/STRANS in the SAP GUI (or import it via abapGit), then continue with the other tools.`,
+          { ...err.details, endpoint: path, hint: "create-in-gui" },
+        );
+      }
+      throw err;
+    }
+  }
 
   async createSimpleTransformation(options: CreateTransformationOptions): Promise<AdtObjectReference> {
     logger.debug("Creating Simple Transformation", { name: options.name });
@@ -15,9 +42,7 @@ export class TransformationService {
       options.transportNumber,
     );
     const body = this.buildTransformationXml(options, "ST");
-    await this.client.post<string>(uri, body, {
-      headers: { "Content-Type": "application/vnd.sap.adt.programs.transforms+xml" },
-    });
+    await this.postCreate(uri, body, "Simple Transformation");
 
     const resultUri = transformationUri(options.name);
     logger.info("Simple Transformation created", { name: options.name });
@@ -32,9 +57,7 @@ export class TransformationService {
       options.transportNumber,
     );
     const body = this.buildTransformationXml(options, "XSLT");
-    await this.client.post<string>(uri, body, {
-      headers: { "Content-Type": "application/vnd.sap.adt.programs.transforms+xml" },
-    });
+    await this.postCreate(uri, body, "XSLT program");
 
     const resultUri = transformationUri(options.name);
     logger.info("XSLT created", { name: options.name });
