@@ -304,11 +304,14 @@ X-sap-adt-sessiontype: stateful      (erst danach auf stateless wechseln)
 
 ### Sperrinhaber ermitteln
 
-Aus Objektmetadaten:
-```
-GET {objectUri}
-→ adtcore:lockedBy Attribut im Response
-```
+ADT bietet keine Abfrage; die Objektmetadaten enthalten keinen Sperrinhaber. `adt_get_lock_owner`
+versucht deshalb in einer eigenen Session zu sperren:
+
+- Sperre gelingt → sofort wieder lösen, Ergebnis „nicht gesperrt"
+- `403 ExceptionResourceNoAccess` mit „Benutzer {USER} bearbeitet bereits {OBJEKT}" (Meldung EU510) → gesperrt von `{USER}`
+- jeder andere Fehler wird weitergegeben
+
+Erkannt werden die deutsche und die englische Meldung (die englische ist nicht live verifiziert).
 
 ---
 

@@ -243,7 +243,7 @@ The server reads the `.env` file of its installation directory. To use different
 |------|-------------|
 | `adt_lock_object` | Acquire edit lock |
 | `adt_unlock_object` | Release lock |
-| `adt_get_lock_owner` | Check lock status |
+| `adt_get_lock_owner` | Check lock status (briefly locks unlocked objects in a separate session) |
 
 ### Transport
 | Tool | Description |

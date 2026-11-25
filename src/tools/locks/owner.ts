@@ -11,7 +11,9 @@ export const getLockOwnerTool: ToolDefinition<typeof schema> = {
   name: "adt_get_lock_owner",
   description:
     "Check if a SAP ABAP object is locked and by whom. " +
-    "Returns lock status and the username holding the lock (if any).",
+    "Returns lock status and the username holding the lock (if any); this includes locks held by your own user. " +
+    "ADT offers no lock query, so an unlocked object is briefly locked and released again in a separate session. " +
+    "Errors that are not a lock conflict (e.g. missing authorization) are returned as errors.",
   inputSchema: schema,
   handler: async (args, services) => {
     try {

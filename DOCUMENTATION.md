@@ -191,7 +191,7 @@ Der Server startet als langlebiger stdio-Daemon und wird automatisch mit jeder n
 |---|---|
 | `adt_lock_object` | Exklusive Schreibsperre holen (gibt Lock-Handle zurück) |
 | `adt_unlock_object` | Schreibsperre freigeben |
-| `adt_get_lock_owner` | Aktuellen Sperr-Inhaber abfragen |
+| `adt_get_lock_owner` | Aktuellen Sperr-Inhaber abfragen (sperrt freie Objekte kurz in eigener Session; Meldung DE/EN) |
 
 ### Transport (4 Tools)
 
