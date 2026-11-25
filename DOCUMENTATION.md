@@ -10,7 +10,7 @@ Ein produktionsreifer MCP-Server (Model Context Protocol), der MCP-kompatiblen C
 2. [Installation](#installation)
 3. [Konfiguration](#konfiguration)
 4. [MCP-Server registrieren](#mcp-server-registrieren)
-5. [Verfügbare Tools (42)](#verfügbare-tools)
+5. [Verfügbare Tools (47)](#verfügbare-tools)
 6. [Typische Workflows](#typische-workflows)
 7. [Fehlerbehandlung](#fehlerbehandlung)
 8. [Bekannte Einschränkungen](#bekannte-einschränkungen)
@@ -22,7 +22,7 @@ Ein produktionsreifer MCP-Server (Model Context Protocol), der MCP-kompatiblen C
 ## Voraussetzungen
 
 - Node.js 22 oder höher
-- SAP-System mit ADT aktiviert (ECC 6.07+ oder S/4HANA 2020+)
+- SAP-System mit ADT aktiviert (ECC 6.07+ oder S/4HANA 2020+); Zugriff per HTTPS oder [RFC](#transport-über-rfc-statt-http-optional)
 - Benutzer mit `S_ADT_RES` und `S_DEVELOP`-Berechtigung
 - Ein MCP-Client mit stdio-Unterstützung (CLI oder Desktop)
 
@@ -62,11 +62,11 @@ SAP_CA_BUNDLE=                    # optional: Pfad zu CA-Zertifikat
 | `LOG_LEVEL` | `info` | `error` / `warn` / `info` / `debug` |
 | `SAP_TLS_VERIFY` | `true` | TLS-Zertifikat prüfen (`false` nur für Entwicklung) |
 | `SAP_CA_BUNDLE` | — | Pfad zum CA-Bundle (PEM) für selbstsignierte Zertifikate |
-| `SAP_REQUEST_TIMEOUT` | `30000` | HTTP-Timeout in Millisekunden |
+| `REQUEST_TIMEOUT` | `60000` | Request-Timeout in Millisekunden (HTTP und RFC) |
 
 ### Transport über RFC statt HTTP (optional)
 
-Ist kein HTTP-Port zum SAP-System freigegeben, aber Eclipse-ADT erreicht es über eine RFC-Destination (Dispatcher/Gateway), kann der Server die ADT-REST-Requests stattdessen über den Funktionsbaustein `SADT_REST_RFC_ENDPOINT` senden. Dazu startet er eine kleine Java-Brücke (`bridge/AdtRfcBridge.java`, SAP JCo) als Subprozess. Alle Tools bleiben unverändert.
+Ist kein HTTP-Port zum SAP-System freigegeben, aber Eclipse-ADT erreicht es über eine RFC-Destination (Dispatcher/Gateway), kann der Server die ADT-REST-Requests stattdessen über den Funktionsbaustein `SADT_REST_RFC_ENDPOINT` senden. Dazu startet er eine kleine Java-Brücke (`bridge/AdtRfcBridge.java`, SAP JCo) als Subprozess. Die Tools bleiben dieselben; die beiden Tabellen-Tools (siehe unten) funktionieren nur in diesem Modus.
 
 **Voraussetzungen:** Java ab 21 (JDK mit `javac`; die Brücke wird mit `--release 21` gebaut; die JVM-Architektur muss zur nativen JCo-Bibliothek passen, z. B. arm64-JVM für `macosx.aarch64` — sonst `SAP_JAVA_BIN` setzen, der Start bricht bei Abweichung mit klarer Meldung ab), SAP JCo (`com.sap.conn.jco_*.jar` plus native Bibliothek `libsapjco3.*`, z. B. aus dem Eclipse-p2-Pool `~/.p2/pool/plugins/` — die Dateien werden nicht ins Repo eingecheckt).
 
@@ -103,12 +103,37 @@ SAP_LANGUAGE=DE
 
 **Verhalten im rfc-Modus:** `SAP_URL` wird ignoriert. Ist `SAP_TRANSPORT=rfc` bereits in der Umgebung des startenden Projekts gesetzt, wird die `.env` des Installationsverzeichnisses **nicht** geladen, damit keine Einstellungen eines anderen Systems einspringen. Fehlen Brücke, JCo-Jar oder native Bibliothek, bricht der Start mit einer klaren Meldung ab — es gibt keinen stillen Fallback auf HTTP. Anmeldung erfolgt per RFC-Logon (kein Basic-Auth/Cookie/CSRF-Handling auf HTTP-Ebene). Details: `docs/architecture.md`, Abschnitt „Transport-Schicht".
 
+#### Tabellen-Tools (nur RFC)
+
+| Tool | Funktionsbaustein | Hinweise |
+|---|---|---|
+| `adt_get_table_fields` | `DDIF_FIELDINFO_GET` | Optionaler Filter `fields`; unbekannte Namen stehen in `unknownFields` |
+| `adt_read_table` | `RFC_READ_TABLE` | Eine Tabelle, keine Joins, max. 512 Byte je Zeile (bei breiten Tabellen `fields` angeben), max. 1000 Zeilen je Aufruf (`skipRows` zum Blättern), Berechtigung `S_TABU_DIS` |
+
+`where` ist eine Open-SQL-Bedingung ohne das Wort `WHERE`. Sie wird nur an Leerzeichen außerhalb von Literalen in 72-Zeichen-Zeilen umbrochen; längere Einzel-Token und nicht geschlossene Hochkommas werden abgelehnt. Alle Werte kommen als Zeichenketten im internen Format zurück. Mit HTTP-Transport antworten beide Tools mit `ADT_RFC_REQUIRED`.
+
+#### Ältere Releases (SAP_BASIS 740)
+
+- Anlage von Objekten benötigt ggf. einen Entwicklerschlüssel (SSCR); ohne ihn kommen Meldungen wie „Objektkatalogeintrag … existiert nicht".
+- Keine ADT-Datenvorschau (`adt_run_sql_query`) und kein `/ddic/tables`: Tabellen-Tools verwenden.
+- Kein ADT-Endpunkt für Simple Transformations / XSLT: SE80/STRANS oder abapGit.
+- `adt_syntax_check_source` benötigt ein existierendes Objekt als `contextUri`.
+
+#### Fehlersuche
+
+| Symptom | Ursache / Lösung |
+|---|---|
+| `404` bei einem Tabellen-Tool | Veraltete Brücken-Klasse: `npm run build:bridge`, dann neue Client-Session |
+| `RFC bridge exited` | JCo-Pfade und Java-Version prüfen; `LOG_LEVEL=debug` zeigt die Ausgabe der Brücke |
+| „SAP_JAVA_BIN … is a JVM for …" | JVM mit passender Architektur verwenden |
+
 ---
 
 ## MCP-Server registrieren
 
 ```bash
-# Einmalig registrieren (user scope — gilt für alle Sessions):
+# Einmalig registrieren (user scope — gilt für alle Projekte;
+# je Projekt/System: --scope local und Variablen mit -e KEY=wert):
 claude mcp add --scope user sap-adt -- node /pfad/zum/MCP_ADT/dist/index.js
 
 # Status prüfen:
@@ -126,17 +151,15 @@ Der Server startet als langlebiger stdio-Daemon und wird automatisch mit jeder n
 
 ## Verfügbare Tools
 
-### Repository (7 Tools)
+### Repository (5 Tools)
 
 | Tool | Beschreibung |
 |---|---|
-| `adt_read_object` | ABAP-Quelltext oder Metadaten lesen (Klassen, Reports, Includes, Interfaces, ...) |
-| `adt_write_object` | Quelltext eines gesperrten Objekts schreiben |
 | `adt_search_object` | Objekte nach Name suchen (Wildcard `*` unterstützt) |
-| `adt_get_object_metadata` | Metadaten eines Objekts lesen (Typ, Paket, Verantwortlicher) |
-| `adt_create_object` | Generisches ADT-Objekt anlegen |
+| `adt_read_object` | ABAP-Quelltext lesen (Klassen, Reports, Includes, Interfaces, ...) |
+| `adt_write_object` | Quelltext eines gesperrten Objekts schreiben (`source` oder `sourceFilePath` für große Quellen) |
+| `adt_create_object` | Generisches Objekt anlegen (`CLAS/OC`, `INTF/OI`, `PROG/P`, `FUGR/F`, `DDLS/DF`, `BDEF/BDO`) |
 | `adt_delete_object` | Objekt löschen (mit Lock) |
-| `adt_compare_versions` | Zwei Versionen eines Objekts vergleichen |
 
 **Klassen-Includes lesen** — `adt_read_object` mit `include`-Parameter:
 
@@ -212,37 +235,43 @@ Der Server startet als langlebiger stdio-Daemon und wird automatisch mit jeder n
 
 `adt_run_unit_tests` probiert automatisch mehrere URI-Strategien aus (`oo-class` → `vit-class` → `vit-package`).
 
-### ABAP-Objekte anlegen (8 Tools)
+### ABAP-Objekte anlegen (6 Tools)
 
 | Tool | Beschreibung |
 |---|---|
 | `adt_create_class` | ABAP-Klasse anlegen |
+| `adt_create_test_include` | Testklassen-Include einer bestehenden Klasse anlegen |
 | `adt_create_interface` | ABAP-Interface anlegen |
 | `adt_create_report` | ABAP-Programm anlegen |
 | `adt_create_function_group` | Funktionsgruppe anlegen |
 | `adt_create_function_module` | Funktionsbaustein anlegen |
-| `adt_create_cds_view` | CDS View anlegen |
-| `adt_create_st` | Simple Transformation anlegen |
-| `adt_create_xslt` | XSLT-Transformation anlegen |
 
-### CDS (5 Tools)
+### CDS und OData (5 Tools)
 
 | Tool | Beschreibung |
 |---|---|
 | `adt_create_cds_view` | CDS View anlegen |
 | `adt_analyze_cds` | CDS View analysieren |
 | `adt_get_cds_dependencies` | Abhängigkeiten einer CDS View |
-| `adt_publish_service_binding` | OData-Service Binding veröffentlichen |
-| `adt_unpublish_service_binding` | OData-Service Binding zurückziehen |
+| `adt_publish_service_binding` | OData-Service-Binding veröffentlichen |
+| `adt_unpublish_service_binding` | OData-Service-Binding zurückziehen |
+
+### Tabellendaten (3 Tools)
+
+| Tool | Beschreibung |
+|---|---|
+| `adt_run_sql_query` | Lesendes Open-SQL-`SELECT` über die ADT-Datenvorschau |
+| `adt_get_table_fields` | Felder einer Tabelle/Struktur/View (nur RFC) |
+| `adt_read_table` | Zeilen einer Tabelle (nur RFC) |
 
 ### Transformationen / XML (6 Tools)
 
 | Tool | Beschreibung |
 |---|---|
-| `adt_create_st` | Simple Transformation anlegen |
-| `adt_create_xslt` | XSLT anlegen |
+| `adt_create_st` | Simple Transformation anlegen (derzeit defekt, siehe Einschränkungen) |
+| `adt_create_xslt` | XSLT anlegen (derzeit defekt, siehe Einschränkungen) |
 | `adt_generate_st_from_xml` | ST aus XML-Muster generieren |
-| `adt_validate_xml_against_xsd` | XML gegen XSD prüfen |
+| `adt_validate_xml_against_xsd` | XML gegen XSD prüfen (Stub) |
 | `adt_analyze_xml_schema` | XML-Schema analysieren |
 | `adt_compare_xml_structures` | Zwei XML-Strukturen vergleichen |
 
@@ -268,7 +297,7 @@ adt_read_object
 
 ```
 1. adt_lock_object      → liefert lockHandle + corrNr (Transport)
-2. adt_write_object     → schreibt Quelltext (lockHandle + corrNr erforderlich)
+2. adt_write_object     → schreibt Quelltext (lockHandle, bei transportierbaren Objekten transportNumber)
 3. adt_unlock_object    → gibt Sperre frei
 4. adt_syntax_check     → prüft auf Fehler
 5. adt_activate_object  → aktiviert das Objekt
@@ -281,7 +310,7 @@ adt_read_object
 ```
 adt_search_object
   query: ZCL_API_*
-  type: CLAS/OC          # optional: Typ-Filter
+  objectType: CLAS/OC    # optional: Typ-Filter
   maxResults: 20
 ```
 
@@ -307,18 +336,17 @@ Ergebnis:
 }
 ```
 
-Status-Werte: `passed` | `failed` | `no_tests_selected`
+Status-Werte: `passed` | `failed` | `no_tests_selected` | `error` (Antwort nicht lesbar)
 
 ### ATC-Prüfung
 
 ```
 1. adt_run_atc
-     objectUri: /sap/bc/adt/oo/classes/zcl_my_class
-   → liefert runId
+     objects: [{ "uri": "/sap/bc/adt/oo/classes/zcl_my_class", "name": "ZCL_MY_CLASS" }]
+   → liefert Findings und die Worklist-ID
 
-2. adt_get_atc_result
-     runId: <runId aus Schritt 1>
-   → liefert Findings mit Priorität, Kategorie, Zeilenangabe
+2. adt_get_atc_result      # optional: Ergebnis erneut abrufen
+     worklistId: <ID aus Schritt 1>
 ```
 
 ---
@@ -340,13 +368,16 @@ Alle Tools geben bei Fehlern ein einheitliches Format zurück:
 
 | Code | Bedeutung | Lösung |
 |---|---|---|
-| `ADT_AUTHENTICATION_ERROR` | Ungültige Credentials oder gesperrter User | `.env` prüfen, Passwort erneuern |
+| `ADT_AUTH_FAILED` | Ungültige Credentials oder gesperrter User | `.env` prüfen, Passwort erneuern |
 | `ADT_NOT_FOUND` | Objekt existiert nicht | URI/Name prüfen |
 | `ADT_LOCK_CONFLICT` | Objekt von anderem User gesperrt | `adt_get_lock_owner` aufrufen; in SM12 freigeben |
-| `ADT_CSRF_ERROR` | CSRF-Token abgelaufen | Automatisch behoben durch Re-Login |
+| `ADT_CSRF_INVALID` | CSRF-Token abgelaufen | Automatisch behoben durch Re-Login |
 | `ADT_TRANSPORT_ERROR` | Kein aktiver Transport | Transportauftrag anlegen oder angeben |
 | `ADT_PERMISSION_DENIED` | Fehlende Berechtigung | SAP-Berechtigungen prüfen (`S_DEVELOP`, `S_ADT_RES`) |
-| `ADT_TIMEOUT` | Anfrage zu langsam | `SAP_REQUEST_TIMEOUT` erhöhen |
+| `ADT_TIMEOUT` | Anfrage zu langsam | `REQUEST_TIMEOUT` erhöhen (oder `timeoutMs` bei Aktivierung/Unit-Tests) |
+| `ADT_NOT_ACCEPTABLE` | SAP lehnt den Content-Type ab | Als Fehler melden |
+| `ADT_RFC_REQUIRED` | Tool braucht RFC-Transport | `SAP_TRANSPORT=rfc` |
+| `ADT_NETWORK_ERROR` | Verbindung oder RFC-Brücke gescheitert | Netz bzw. JCo-Konfiguration prüfen |
 
 ### Verwaiste Sperren (ENQUEUE-Locks)
 
@@ -369,6 +400,13 @@ Wenn eine Session abbricht während ein Lock aktiv ist, bleibt der ENQUEUE-Lock 
 
 SAP ADT verwendet `/sap/bc/adt/oo/classes/{name}` für Klassen (nicht `/sap/bc/adt/classes/classes/{name}`). Der Server verwendet intern die korrekte URI, die von `adt_search_object` zurückgegeben wird.
 
+### Nicht unterstützt / defekt
+
+- `BDEF/BDO`: Anlegen und Schreiben funktionieren, die Aktivierung schlägt fehl
+- `adt_create_st` / `adt_create_xslt`: Anlage scheitert mit `ADT_NOT_FOUND`
+- Datenbanktabellen können nicht angelegt werden
+- XML-Validierung gegen XSD ist ein Stub
+
 ### Aktivierung nach Unlock
 
 SAP erfordert, dass die Schreibsperre (ENQUEUE-Lock) freigegeben ist, bevor ein Objekt aktiviert werden kann. Der korrekte Workflow ist immer: Unlock → Syntaxcheck → Aktivierung.
@@ -381,7 +419,7 @@ SAP erfordert, dass die Schreibsperre (ENQUEUE-Lock) freigegeben ist, bevor ein 
 # TypeScript kompilieren
 npm run build
 
-# Unit Tests (45 Tests)
+# Unit Tests
 npm test
 
 # Nur Unit Tests
