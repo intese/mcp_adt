@@ -15,6 +15,11 @@ const OPTION_LINE = 72;
  * Break only at whitespace outside quoted literals; a single token longer than a line is an error.
  */
 function splitWhere(where: string): string[] {
+  // Quotes inside a literal are doubled, so a well-formed clause has an even number of them.
+  // The tokenizer would silently drop a lone quote and change the query.
+  if (where.split("'").length % 2 === 0) {
+    throw new Error("WHERE contains an unbalanced single quote");
+  }
   const tokens = where.match(/(?:'(?:[^']|'')*'|[^\s'])+/g) ?? [];
   const lines: string[] = [];
   let cur = "";
