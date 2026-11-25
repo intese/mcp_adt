@@ -132,6 +132,14 @@ export function parseSap406AcceptedTypes(body: string): string | null {
   return null;
 }
 
+// SAP message EU510 "user X is already editing Y" (German / English); captures the user
+const LOCK_CONFLICT_RE = /(?:Benutzer|User) (\S+) (?:bearbeitet bereits|is currently editing)/;
+
+/** The user holding the lock, if the message is SAP's lock-conflict refusal. */
+export function lockOwnerFromMessage(message: string): string | undefined {
+  return LOCK_CONFLICT_RE.exec(message)?.[1];
+}
+
 export function parseSapErrorBody(body: string): { message: string; details: Record<string, unknown> } {
   try {
     const parsed = parseXml(body);
@@ -195,6 +203,9 @@ export function mapHttpError(
       return new AdtCsrfError();
     }
     const { message, details } = parseSapErrorBody(body);
+    // SAP reports a lock held by someone else as 403, not 423
+    const lockedBy = lockOwnerFromMessage(message);
+    if (lockedBy) return new AdtLockError(message, { lockedBy });
     return new AdtPermissionError(message || `Access denied to ${url}`);
   }
 

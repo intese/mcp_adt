@@ -55,11 +55,12 @@ GET {objectUri}
 Accept: */*
 ```
 
-**Verifiziert 2026-09-11 live gegen ein reales SAP-System** (Klasse und Interface): Jeder
-spezifische `vnd.sap.*`-Content-Type — inkl. des zuvor hier dokumentierten
-`application/vnd.sap.adt.core.objectstructure+xml` — wird von SAP mit `406 Not Acceptable`
-(„Zulässige Inhaltstypen:" mit leerer Liste) abgelehnt, für Klassen und Interfaces
-gleichermaßen. Nur `Accept: */*` (bzw. gar kein Accept-Header) liefert `200 OK`.
+Der akzeptierte Typ hängt vom Backend ab (alle Fälle live verifiziert):
+
+- Es gibt Systeme, die jeden `vnd.sap.*`-Typ (auch `core.objectstructure+xml`) mit `406` ablehnen; dort funktioniert `*/*`.
+- SAP_BASIS 740 hat für Klassen keinen Content-Handler zu `*/*` und `application/*`; der Server wiederholt dann mit `application/vnd.sap.adt.oo.classes+xml`.
+
+Die Metadaten enthalten keinen Sperrstatus (siehe „Sperrinhaber ermitteln").
 
 ### Quelltext lesen
 
@@ -311,7 +312,8 @@ versucht deshalb in einer eigenen Session zu sperren:
 - `403 ExceptionResourceNoAccess` mit „Benutzer {USER} bearbeitet bereits {OBJEKT}" (Meldung EU510) → gesperrt von `{USER}`
 - jeder andere Fehler wird weitergegeben
 
-Erkannt werden die deutsche und die englische Meldung (die englische ist nicht live verifiziert).
+Erkannt werden die deutsche und die englische Meldung („User {USER} is currently editing {OBJEKT}"), beide live verifiziert.
+Auch `adt_lock_object` meldet diese Ablehnung als `ADT_LOCK_CONFLICT` mit `details.lockedBy`.
 
 ---
 

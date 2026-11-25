@@ -3,7 +3,7 @@ import type { AdtLockResult, AdtLockInfo } from "../types/index.js";
 import { parseXml, extractText, getNestedValue } from "../utils/xml.js";
 import { logger } from "../utils/logger.js";
 import { validateAdtUri } from "../utils/uri.js";
-import { AdtLockError } from "../adt/errors.js";
+import { AdtLockError, lockOwnerFromMessage } from "../adt/errors.js";
 
 // SAP ADT lock mechanism:
 // - Lock:   POST {objectUri}?_action=LOCK&accessMode=MODIFY  (stateful session)
@@ -16,9 +16,6 @@ import { AdtLockError } from "../adt/errors.js";
 function includeUriForProgram(objectUri: string): string {
   return objectUri.replace("/programs/programs/", "/programs/includes/");
 }
-
-// SAP message EU510 "user X is already editing Y"; captures the user
-const LOCK_CONFLICT_RE = /(?:Benutzer|User) (\S+) (?:bearbeitet bereits|is currently editing)/;
 
 export class LockService {
   constructor(private readonly client: AdtHttpClient) {}
@@ -88,7 +85,7 @@ export class LockService {
       try {
         handle = (await locks.acquireLock(objectUri)).lockHandle;
       } catch (err) {
-        const owner = err instanceof Error ? LOCK_CONFLICT_RE.exec(err.message)?.[1] : undefined;
+        const owner = err instanceof Error ? lockOwnerFromMessage(err.message) : undefined;
         if (owner) return { isLocked: true, lockedBy: owner };
         // Any other refusal says nothing about locks: never report it as "unlocked"
         throw err;

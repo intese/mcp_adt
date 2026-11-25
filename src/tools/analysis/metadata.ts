@@ -11,7 +11,8 @@ export const getObjectMetadataTool: ToolDefinition<typeof schema> = {
   name: "adt_get_object_metadata",
   description:
     "Get metadata of a SAP ABAP object: name, type, description, package, " +
-    "responsible user, created/changed dates, lock status, and version.",
+    "responsible user, created/changed dates, and version. " +
+    "Lock status is not part of the metadata: use adt_get_lock_owner.",
   inputSchema: schema,
   handler: async (args, services) => {
     try {
