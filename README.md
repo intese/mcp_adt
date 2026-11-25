@@ -8,7 +8,7 @@ Enables MCP-compatible clients to directly read, write, activate, and analyze SA
 
 ## Features
 
-- **47 MCP tools** for the full ABAP development lifecycle
+- **49 MCP tools** for the full ABAP development lifecycle
 - Read and write ABAP source code (classes, interfaces, reports, function groups, CDS)
 - Syntax check, activation, ATC analysis, ABAP Unit Tests
 - Transport request management
@@ -149,13 +149,25 @@ SAP_LANGUAGE=EN
 ### Older releases (SAP_BASIS 740)
 
 - No ADT data preview (`adt_run_sql_query`) and no `/ddic/tables` endpoint: use the table tools above.
-- No ADT endpoint for Simple Transformations / XSLT: create them in SE80/STRANS or with abapGit.
+- No ADT endpoint for Simple Transformations / XSLT: they are handled through RFC, see below.
 - `adt_syntax_check_source` needs an existing object as `contextUri`.
+
+### Transformations via RFC
+
+`XSLT_MAINTENANCE_RFC` handles Simple Transformations and XSLT programs where ADT has no endpoint:
+
+- `adt_create_st` / `adt_create_xslt` fall back to it and create an **inactive** version (from `source`, otherwise a skeleton). Existing objects are never overwritten.
+- `adt_read_transformation` returns source, package, description and state (the inactive version if there is one).
+- `adt_write_transformation` replaces the complete source and activates it (`activate: false` only saves). No lock handle needed. On syntax errors the new source stays inactive and the active version is unchanged; SAP returns only the message id, not the error lines.
+- Source lines are limited to 255 characters. Transportable packages require `transportNumber`.
+- `adt_write_object`, `adt_lock_object` and `adt_activate_object` do not work for these objects, and there is no delete tool (use SE80/STRANS).
+- Live verified for `$TMP` objects on SAP_BASIS 740. Not verified: transport requests, lock conflicts, running the generated transformation.
 
 ### Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
+| `build:bridge` hint from a transformation tool | Outdated bridge class: run `npm run build:bridge` and restart the MCP client session |
 | `404` for a table tool | Outdated bridge class: run `npm run build:bridge` and restart the MCP client session |
 | `RFC bridge exited` | Check the JCo paths and Java version; `LOG_LEVEL=debug` shows the bridge output |
 | "SAP_JAVA_BIN ... is a JVM for ..." | Use a JVM with the same architecture as the native library |
@@ -313,8 +325,10 @@ The server reads the `.env` file of its installation directory. To use different
 ### Transformations & XML
 | Tool | Description |
 |------|-------------|
-| `adt_create_st` | Create Simple Transformation |
-| `adt_create_xslt` | Create XSLT program |
+| `adt_create_st` | Create Simple Transformation (ADT; RFC fallback) |
+| `adt_create_xslt` | Create XSLT program (ADT; RFC fallback) |
+| `adt_read_transformation` | Read ST/XSLT source and attributes (RFC only) |
+| `adt_write_transformation` | Write and activate ST/XSLT source (RFC only) |
 | `adt_generate_st_from_xml` | Generate ST skeleton from XML |
 | `adt_analyze_xml_schema` | Analyze XSD schema |
 | `adt_validate_xml_against_xsd` | Validate XML against XSD |
@@ -413,7 +427,7 @@ Usage notes:
 
 ### Known limitations
 - `BDEF/BDO`: creating and writing works, activation fails
-- `adt_create_st` / `adt_create_xslt`: creation fails with `ADT_NOT_FOUND` (no verified endpoint)
+- `adt_create_st` / `adt_create_xslt` over HTTP(S): creation fails with `ADT_NOT_FOUND` (no verified ADT endpoint); use the RFC transport
 - `adt_create_object` does not support database tables
 - `adt_validate_xml_against_xsd` is a stub
 

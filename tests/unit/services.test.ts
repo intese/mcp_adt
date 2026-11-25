@@ -1032,6 +1032,7 @@ describe("TransformationService create errors", () => {
     mockPost.mockImplementationOnce(async () => {
       throw new AdtNotFoundError("/sap/bc/adt/programs/transforms?packageName=%24TMP");
     });
+    Object.assign(client, { supportsRfc: () => false });
     const service = new TransformationService(client);
 
     const err = await service[method](opts).catch((e: unknown) => e);

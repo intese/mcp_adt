@@ -146,6 +146,11 @@ export class AdtHttpClient {
     this.session.setType(type);
   }
 
+  /** Whether direct function-module calls are possible (SAP_TRANSPORT=rfc). */
+  supportsRfc(): boolean {
+    return this.transport.callFunction !== undefined;
+  }
+
   /** Call an RFC function module directly. Requires SAP_TRANSPORT=rfc. */
   async callFunction(req: RfcCallRequest): Promise<RfcCallResult> {
     if (!this.transport.callFunction) {

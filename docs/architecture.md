@@ -13,7 +13,7 @@ Der `sap-adt-mcp-server` ist ein produktionsreifer MCP-Server (Model Context Pro
 ┌──────────────────────────▼──────────────────────────────────┐
 │                     MCP Server Layer                         │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │               Tool Registry (47 Tools)               │    │
+│  │               Tool Registry (49 Tools)               │    │
 │  │  repository | activation | syntax | transport |      │    │
 │  │  package | analysis | atc | unittest | locks |       │    │
 │  │  abap | cds | odata | table | transformations       │    │
@@ -85,7 +85,7 @@ Zentrale Registrierung aller MCP-Tools. Jedes Tool ist ein eigenständiges Modul
 | cds | 3 | CDS Views anlegen/analysieren |
 | odata | 2 | Service Bindings veröffentlichen/zurückziehen |
 | table | 3 | SQL-Datenvorschau; Tabellenfelder und -zeilen (RFC) |
-| transformations | 6 | ST/XSLT anlegen, XML-Hilfsfunktionen |
+| transformations | 8 | ST/XSLT anlegen, lesen und schreiben, XML-Hilfsfunktionen |
 
 ### 3. Service Layer (`src/services/`)
 
@@ -110,7 +110,8 @@ ATCService          — ATC-Läufe und Ergebnisverarbeitung
 UnitTestService     — Unit-Test-Ausführung und Auswertung
 LockService         — Lock-Lifecycle-Management
 CDSService          — CDS-Artefakte und Service-Bindings
-TransformationService — ST/XSLT-Verwaltung
+TransformationService — ST/XSLT-Verwaltung über ADT, Anlage mit RFC-Rückfall
+RfcTransformationService — ST/XSLT über XSLT_MAINTENANCE_RFC
 DependencyService   — Where-Used und Abhängigkeitsgraphen
 TableService        — SQL-Abfragen über die ADT-Datenvorschau
 RfcTableService     — Tabellenfelder/-zeilen über Funktionsbausteine (RFC)
@@ -408,3 +409,5 @@ Vertrag des Bausteins (aus `com.sap.adt.communication` ausgelesen, im Betrieb ge
 Einrichtung (`.env`): `SAP_TRANSPORT=rfc`, `SAP_RFC_ASHOST`, `SAP_RFC_SYSNR`, optional `SAP_RFC_GWHOST`/`SAP_RFC_GWSERV`, `SAP_JCO_JAR` (Pfad zu `com.sap.conn.jco_*.jar`), `SAP_JCO_NATIVE_DIR` (Ordner mit `libsapjco3.dylib`), optional `SAP_JAVA_BIN`, `SAP_RFC_BRIDGE_CLASSES`. `SAP_CLIENT`/`SAP_USER`/`SAP_PASSWORD`/`SAP_LANGUAGE` gelten weiter. Brücke bauen: `SAP_JCO_JAR=… npm run build:bridge`. Die JCo-Dateien werden nicht ins Repo eingecheckt.
 
 **Direkte Funktionsbaustein-Aufrufe (nur RFC-Transport):** Die Bridge kennt neben dem HTTP-Tunnel die Methode `RFC_CALL` (`AdtRfcBridge.callFunction`, Zeilenprotokoll in `src/adt/rfcCodec.ts`) und ruft damit beliebige Funktionsbausteine. Darauf setzen `adt_get_table_fields` (`DDIF_FIELDINFO_GET`) und `adt_read_table` (`RFC_READ_TABLE`, einzelne Tabelle, max. 512 Byte Zeilenbreite, WHERE in 72-Zeichen-Zeilen, Berechtigung `S_TABU_DIS`) auf (`RfcTableService`). Gedacht für Systeme, deren ADT-Backend `/ddic/*` und `/datapreview/*` nicht kennt (ältere ECC). Mit HTTP-Transport antworten sie mit `ADT_RFC_REQUIRED`. Der Filter `fields` von `adt_get_table_fields` ist noch nicht live verifiziert. Nach Änderungen an der Bridge `npm run build:bridge` ausführen und die Client-Session neu starten.
+
+**Transformationen:** `RfcTransformationService` nutzt `XSLT_MAINTENANCE_RFC` (Operationen `SHOW`, `CREATE`, `MODIFY`, `MODI_ACT`). Der Baustein setzt beim Ändern alle Attribute neu, daher werden Paket, Autor, Sprache und Beschreibung vorher gelesen. Quellzeilen sind `CHAR255`. Ohne Transportauftrag würde SAP bei transportierbaren Paketen ein Popup öffnen, deshalb wird vorher abgelehnt. `O`-Zeilen im Protokoll liefern auch Strukturen und Einzelwerte; ABAP-Ausnahmen kommen mit Schlüssel, Meldungstext, Meldungsnummer und Variablen zurück (`ADT_ABAP_EXCEPTION`).

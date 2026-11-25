@@ -4,64 +4,99 @@ import type { CreateTransformationOptions, AdtObjectReference } from "../types/i
 import { parseXml } from "../utils/xml.js";
 import { logger } from "../utils/logger.js";
 import { transformationUri, sourceUri, withCorrNr } from "../utils/uri.js";
+import { RfcTransformationService } from "./RfcTransformationService.js";
+
+/** Minimal valid sources: XSLT_MAINTENANCE_RFC cannot create an empty object. */
+const SKELETONS = {
+  ST: `<?sap.transform simple?>
+<tt:transform xmlns:tt="http://www.sap.com/transformation-templates">
+  <tt:root name="ROOT"/>
+  <tt:template>
+    <root>
+      <tt:value ref="ROOT"/>
+    </root>
+  </tt:template>
+</tt:transform>`,
+  XSLT: `<?xml version="1.0" encoding="utf-8"?>
+<xsl:transform version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <xsl:template match="/">
+    <xsl:copy-of select="."/>
+  </xsl:template>
+</xsl:transform>`,
+};
+
+export interface CreatedTransformation extends AdtObjectReference {
+  /** Set when the object was created through RFC instead of ADT. */
+  via?: "rfc";
+  hint?: string;
+}
 
 export class TransformationService {
   constructor(private readonly client: AdtHttpClient) {}
 
   /**
-   * ST/XSLT creation is unverified against any ADT backend (see docs/adt-endpoints.md).
+   * ST/XSLT creation via ADT is unverified against any backend (see docs/adt-endpoints.md).
    * A 404 on the collection means the endpoint is not served at all; observed on SAP_BASIS
-   * 740 SP04, whose ADT discovery has no transformation collection. Say so, instead of a
-   * bare "Object not found" that reads like a missing package or object.
+   * 740 SP04, whose ADT discovery has no transformation collection. With RFC the object is
+   * then created through XSLT_MAINTENANCE_RFC; otherwise explain instead of a bare
+   * "Object not found" that reads like a missing package or object.
    */
-  private async postCreate(uri: string, body: string, label: string): Promise<void> {
+  private async create(
+    options: CreateTransformationOptions,
+    type: "ST" | "XSLT",
+  ): Promise<CreatedTransformation> {
+    const label = type === "ST" ? "Simple Transformation" : "XSLT program";
+    logger.debug(`Creating ${label}`, { name: options.name });
+
+    const uri = withCorrNr(
+      `/sap/bc/adt/programs/transforms?packageName=${encodeURIComponent(options.packageName)}`,
+      options.transportNumber,
+    );
+    const result: CreatedTransformation = {
+      uri: transformationUri(options.name),
+      name: options.name.toUpperCase(),
+      type: type === "ST" ? "XSLT/VT" : "XSLT/XT",
+    };
+
     try {
-      await this.client.post<string>(uri, body, {
+      await this.client.post<string>(uri, this.buildTransformationXml(options, type), {
         headers: { "Content-Type": "application/vnd.sap.adt.programs.transforms+xml" },
       });
     } catch (err) {
-      if (err instanceof AdtBaseError && err.errorCode === "ADT_NOT_FOUND") {
+      if (!(err instanceof AdtBaseError) || err.errorCode !== "ADT_NOT_FOUND") throw err;
+      if (!this.client.supportsRfc()) {
         const path = uri.split("?")[0] ?? uri;
         throw new AdtBaseError(
           "ADT_NOT_FOUND",
           `Creating a ${label} via ADT is not available on this backend: ${path} is not served ` +
             `(older systems such as SAP_BASIS 740 have no ADT endpoint for transformations). ` +
-            `Create it in SE80/STRANS in the SAP GUI (or import it via abapGit), then continue with the other tools.`,
-          { ...err.details, endpoint: path, hint: "create-in-gui" },
+            `Use SAP_TRANSPORT=rfc, or create it in SE80/STRANS in the SAP GUI (or import it via abapGit).`,
+          { ...err.details, endpoint: path, hint: "use-rfc-or-gui" },
         );
       }
-      throw err;
+      await new RfcTransformationService(this.client).create({
+        name: options.name,
+        description: options.description,
+        packageName: options.packageName,
+        transportNumber: options.transportNumber,
+        source: options.source ?? SKELETONS[type],
+      });
+      result.via = "rfc";
+      result.hint =
+        "Created via RFC as inactive version. Use adt_write_transformation to set the source and activate " +
+        "(adt_write_object and the ADT URI do not work for transformations on this backend).";
     }
+
+    logger.info(`${label} created`, { name: options.name });
+    return result;
   }
 
-  async createSimpleTransformation(options: CreateTransformationOptions): Promise<AdtObjectReference> {
-    logger.debug("Creating Simple Transformation", { name: options.name });
-
-    const uri = withCorrNr(
-      `/sap/bc/adt/programs/transforms?packageName=${encodeURIComponent(options.packageName)}`,
-      options.transportNumber,
-    );
-    const body = this.buildTransformationXml(options, "ST");
-    await this.postCreate(uri, body, "Simple Transformation");
-
-    const resultUri = transformationUri(options.name);
-    logger.info("Simple Transformation created", { name: options.name });
-    return { uri: resultUri, name: options.name.toUpperCase(), type: "XSLT/VT" };
+  async createSimpleTransformation(options: CreateTransformationOptions): Promise<CreatedTransformation> {
+    return this.create(options, "ST");
   }
 
-  async createXslt(options: CreateTransformationOptions): Promise<AdtObjectReference> {
-    logger.debug("Creating XSLT", { name: options.name });
-
-    const uri = withCorrNr(
-      `/sap/bc/adt/programs/transforms?packageName=${encodeURIComponent(options.packageName)}`,
-      options.transportNumber,
-    );
-    const body = this.buildTransformationXml(options, "XSLT");
-    await this.postCreate(uri, body, "XSLT program");
-
-    const resultUri = transformationUri(options.name);
-    logger.info("XSLT created", { name: options.name });
-    return { uri: resultUri, name: options.name.toUpperCase(), type: "XSLT/XT" };
+  async createXslt(options: CreateTransformationOptions): Promise<CreatedTransformation> {
+    return this.create(options, "XSLT");
   }
 
   async getTransformationSource(name: string): Promise<string> {

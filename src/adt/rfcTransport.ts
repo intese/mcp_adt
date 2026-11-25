@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import readline from "readline";
 import type { AdtClientConfig } from "../types/index.js";
 import type { AdtTransport, TransportRequest, TransportResponse } from "./transport.js";
-import { encodeRfcCall, decodeRfcResult, type RfcCallRequest, type RfcCallResult } from "./rfcCodec.js";
+import { encodeRfcCall, decodeRfcResult, parseBridgeError, type RfcCallRequest, type RfcCallResult } from "./rfcCodec.js";
 import { AdtNetworkError, AdtTimeoutError } from "./errors.js";
 import { logger } from "../utils/logger.js";
 
@@ -163,8 +163,8 @@ export class RfcBridgeTransport implements AdtTransport {
     this.pending.delete(f[0]!);
     clearTimeout(p.timer);
 
-    if (f[1] === "ERR") {
-      p.reject(new AdtNetworkError(`RFC call failed: ${unb64(f[2] ?? "").toString("utf8")}`));
+    if (f[1] === "ERR" || f[1] === "ABAP") {
+      p.reject(parseBridgeError(f));
       return;
     }
 
