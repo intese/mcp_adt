@@ -13,10 +13,10 @@ Der `sap-adt-mcp-server` ist ein produktionsreifer MCP-Server (Model Context Pro
 ┌──────────────────────────▼──────────────────────────────────┐
 │                     MCP Server Layer                         │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │               Tool Registry (40+ Tools)              │    │
+│  │               Tool Registry (47 Tools)               │    │
 │  │  repository | activation | syntax | transport |      │    │
 │  │  package | analysis | atc | unittest | locks |       │    │
-│  │  abap | cds | odata | transformations               │    │
+│  │  abap | cds | odata | table | transformations       │    │
 │  └────────────────────────┬────────────────────────────┘    │
 │  ┌─────────────────────────▼──────────────────────────────┐ │
 │  │                   Service Layer                         │ │
@@ -31,7 +31,7 @@ Der `sap-adt-mcp-server` ist ein produktionsreifer MCP-Server (Model Context Pro
 │                   ADT Client Layer                           │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │                   AdtHttpClient                        │  │
-│  │  - Axios HTTP engine                                   │  │
+│  │  - Transport: HTTP (axios) or RFC (Java/JCo bridge)    │  │
 │  │  - Session management (stateful/stateless)             │  │
 │  │  - CSRF token handling (auto-fetch + auto-retry)       │  │
 │  │  - Cookie persistence (SAP_SESSION + MYSAPSSO2)        │  │
@@ -40,7 +40,7 @@ Der `sap-adt-mcp-server` ist ein produktionsreifer MCP-Server (Model Context Pro
 │  │  - Request/Response logging (sanitized)                │  │
 │  └───────────────────────────────────────────────────────┘  │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ HTTPS (REST / XML / JSON)
+                           │ HTTPS or RFC (SADT_REST_RFC_ENDPOINT)
 ┌──────────────────────────▼──────────────────────────────────┐
 │                   SAP Backend                                │
 │             SAP ECC 6.07+ / S/4HANA 2020+                   │
@@ -72,18 +72,19 @@ Zentrale Registrierung aller MCP-Tools. Jedes Tool ist ein eigenständiges Modul
 
 | Gruppe | Anzahl | Beschreibung |
 |--------|--------|--------------|
-| repository | 7 | Objekte lesen/schreiben/suchen/erzeugen/löschen |
+| repository | 5 | Objekte suchen/lesen/schreiben/erzeugen/löschen |
 | activation | 2 | Einzeln- und Massenaktivierung |
 | syntax | 2 | Syntaxprüfung (Objekt + Quelltext) |
-| transport | 4 | Aufträge auflisten/erzeugen/zuweisen/freigeben |
+| transport | 4 | Aufträge auflisten/erzeugen/freigeben/löschen |
 | package | 3 | Pakete auflisten/erzeugen/Inhalt lesen |
 | analysis | 4 | Where-Used, Abhängigkeiten, Metadaten, Versionen |
 | atc | 2 | ATC starten + Ergebnisse lesen |
 | unittest | 2 | Unit Tests starten + Ergebnisse lesen |
 | locks | 3 | Sperren setzen/lösen/Besitzer ermitteln |
-| abap | 8 | Klassen, Interfaces, Reports, Funktionsgruppen |
-| cds | 5 | CDS Views anlegen/analysieren/generieren |
-| odata | 2 | Service Bindings + Definitionen erzeugen |
+| abap | 6 | Klassen (inkl. Test-Include), Interfaces, Reports, Funktionsgruppen/-bausteine |
+| cds | 3 | CDS Views anlegen/analysieren |
+| odata | 2 | Service Bindings veröffentlichen/zurückziehen |
+| table | 3 | SQL-Datenvorschau; Tabellenfelder und -zeilen (RFC) |
 | transformations | 6 | ST/XSLT anlegen, XML-Hilfsfunktionen |
 
 ### 3. Service Layer (`src/services/`)
@@ -111,6 +112,8 @@ LockService         — Lock-Lifecycle-Management
 CDSService          — CDS-Artefakte und Service-Bindings
 TransformationService — ST/XSLT-Verwaltung
 DependencyService   — Where-Used und Abhängigkeitsgraphen
+TableService        — SQL-Abfragen über die ADT-Datenvorschau
+RfcTableService     — Tabellenfelder/-zeilen über Funktionsbausteine (RFC)
 ```
 
 ### 4. ADT Client Layer (`src/adt/`)
@@ -211,9 +214,9 @@ MCP Client { content: [{ type: "text", text: "..." }] }
 1. adt_lock_object      → LockService.acquireLock(uri)   → Lock Handle
 2. adt_write_object     → ObjectService.setSource(uri, src, lockHandle, transport)
                           (src inline or read from sourceFilePath)
-3. adt_syntax_check     → SyntaxService.check(uri)
-4. adt_activate_object  → ActivationService.activate(uri)
-5. adt_unlock_object    → LockService.releaseLock(uri, lockHandle)
+3. adt_unlock_object    → LockService.releaseLock(uri, lockHandle)
+4. adt_syntax_check     → SyntaxService.checkObject(uri)
+5. adt_activate_object  → ActivationService   (erst nach dem Unlock)
 ```
 
 ---
@@ -243,11 +246,11 @@ Alle Fehler werden normalisiert:
 {
   "success": false,
   "errorCode": "ADT_LOCK_CONFLICT",
-  "message": "Object /sap/bc/adt/classes/classes/ZMY_CLASS is locked by user DEVUSER",
+  "message": "Object /sap/bc/adt/oo/classes/zmy_class is locked by user DEVUSER",
   "details": {
     "lockedBy": "DEVUSER",
     "lockTime": "2024-01-15T10:30:00Z",
-    "objectUri": "/sap/bc/adt/classes/classes/ZMY_CLASS"
+    "objectUri": "/sap/bc/adt/oo/classes/zmy_class"
   }
 }
 ```
@@ -394,11 +397,14 @@ sap-adt-mcp-server/
 
 `AdtHttpClient` spricht über das Interface `AdtTransport` (`src/adt/transport.ts`). Default ist `HttpTransport` (axios). Mit `SAP_TRANSPORT=rfc` wird stattdessen `RfcBridgeTransport` (`src/adt/rfcTransport.ts`) genutzt: ein Java-Subprozess (`bridge/AdtRfcBridge.java`, SAP JCo) ruft den Funktionsbaustein `SADT_REST_RFC_ENDPOINT` auf — derselbe Weg wie Eclipse-ADT über eine RFC-Destination, ohne HTTP-Port.
 
-Vertrag des Bausteins (aus `com.sap.adt.communication` per `javap` ausgelesen, noch nicht live verifiziert):
+Vertrag des Bausteins (aus `com.sap.adt.communication` ausgelesen, im Betrieb gegen ein System mit SAP_BASIS 740 genutzt):
 - Import `REQUEST`: `REQUEST_LINE{METHOD,URI,VERSION}`, `HEADER_FIELDS` (Tabelle `NAME`/`VALUE`), `MESSAGE_BODY` (Binär)
 - Export `RESPONSE`: `STATUS_LINE{VERSION,STATUS_CODE,REASON_PHRASE}`, `HEADER_FIELDS`, `MESSAGE_BODY`
+- `RFC_CALL`-Zeilenprotokoll: je Tabellenparameter wird pro Aufruf genau ein `JCoTable`-Handle verwendet (jedes Handle hat einen eigenen Zeilencursor)
+- Prozessmodell: ein Bridge-Prozess, Start beim ersten Request; endet er, werden offene Requests mit `ADT_NETWORK_ERROR` abgewiesen und der nächste Request startet ihn neu (eine stateful Session samt Sperren geht dabei verloren)
+- Preflight (`src/adt/rfcPreflight.ts`): Architektur von JVM und nativer JCo-Bibliothek müssen übereinstimmen
 - Stateful-Session = `JCoContext.begin(destination)` (thread-/verbindungsgebunden); `Authorization`/`Cookie` entfallen (RFC-Logon).
 
 Einrichtung (`.env`): `SAP_TRANSPORT=rfc`, `SAP_RFC_ASHOST`, `SAP_RFC_SYSNR`, optional `SAP_RFC_GWHOST`/`SAP_RFC_GWSERV`, `SAP_JCO_JAR` (Pfad zu `com.sap.conn.jco_*.jar`), `SAP_JCO_NATIVE_DIR` (Ordner mit `libsapjco3.dylib`), optional `SAP_JAVA_BIN`, `SAP_RFC_BRIDGE_CLASSES`. `SAP_CLIENT`/`SAP_USER`/`SAP_PASSWORD`/`SAP_LANGUAGE` gelten weiter. Brücke bauen: `SAP_JCO_JAR=… npm run build:bridge`. Die JCo-Dateien werden nicht ins Repo eingecheckt.
 
-**Direkte Funktionsbaustein-Aufrufe (nur RFC-Transport):** Die Bridge kennt neben dem HTTP-Tunnel die Methode `RFC_CALL` (`AdtRfcBridge.callFunction`, Zeilenprotokoll in `src/adt/rfcCodec.ts`) und ruft damit beliebige Funktionsbausteine. Darauf setzen `adt_get_table_fields` (`DDIF_FIELDINFO_GET`) und `adt_read_table` (`RFC_READ_TABLE`, einzelne Tabelle, max. 512 Byte Zeilenbreite, WHERE in 72-Zeichen-Zeilen, Berechtigung `S_TABU_DIS`) auf (`RfcTableService`). Gedacht für Systeme, deren ADT-Backend `/ddic/*` und `/datapreview/*` nicht kennt (ältere ECC). Mit HTTP-Transport antworten sie mit `ADT_RFC_REQUIRED`. Nicht live verifiziert; nach Build `npm run build:bridge` neu ausführen.
+**Direkte Funktionsbaustein-Aufrufe (nur RFC-Transport):** Die Bridge kennt neben dem HTTP-Tunnel die Methode `RFC_CALL` (`AdtRfcBridge.callFunction`, Zeilenprotokoll in `src/adt/rfcCodec.ts`) und ruft damit beliebige Funktionsbausteine. Darauf setzen `adt_get_table_fields` (`DDIF_FIELDINFO_GET`) und `adt_read_table` (`RFC_READ_TABLE`, einzelne Tabelle, max. 512 Byte Zeilenbreite, WHERE in 72-Zeichen-Zeilen, Berechtigung `S_TABU_DIS`) auf (`RfcTableService`). Gedacht für Systeme, deren ADT-Backend `/ddic/*` und `/datapreview/*` nicht kennt (ältere ECC). Mit HTTP-Transport antworten sie mit `ADT_RFC_REQUIRED`. Der Filter `fields` von `adt_get_table_fields` ist noch nicht live verifiziert. Nach Änderungen an der Bridge `npm run build:bridge` ausführen und die Client-Session neu starten.

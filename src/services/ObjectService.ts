@@ -31,6 +31,9 @@ import {
 } from "../utils/uri.js";
 import type { LockService } from "./LockService.js";
 
+/** SAP's wording when it rejects a media type */
+const CONTENT_TYPE_ERROR_RE = /content[- ]?(handler|type)|inhaltstyp|medientyp|content-behandler|datentyp/i;
+
 export class ObjectService {
   constructor(
     private readonly client: AdtHttpClient,
@@ -43,13 +46,19 @@ export class ObjectService {
     validateAdtUri(objectUri);
     logger.debug("Getting object metadata", { uri: objectUri });
 
-    // SAP's content negotiation for this resource rejects every vnd.sap.* type
-    // (including the documented application/vnd.sap.adt.core.objectstructure+xml)
-    // with 406 "Zulässige Inhaltstypen:" (empty list) — verified live for both
-    // CLAS and INTF; only a wildcard Accept is actually accepted.
-    const xml = await this.client.get<string>(objectUri, {
-      headers: { Accept: "*/*" },
-    });
+    // The accepted type differs between backends (all verified live): some reject every
+    // vnd.sap.* type (including core.objectstructure+xml) with 406 and need the wildcard;
+    // SAP_BASIS 740 has no content handler for the wildcard on classes.
+    const get = (accept: string): Promise<string> =>
+      this.client.get<string>(objectUri, { headers: { Accept: accept } });
+    let xml: string;
+    try {
+      xml = await get("*/*");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (!objectUri.includes("/oo/classes/") || !CONTENT_TYPE_ERROR_RE.test(msg)) throw err;
+      xml = await get("application/vnd.sap.adt.oo.classes+xml");
+    }
 
     return this.parseObjectMetadata(xml, objectUri);
   }
@@ -161,7 +170,7 @@ export class ObjectService {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
-      if (!/content[- ]?(handler|type)|inhaltstyp|medientyp|content-behandler|datentyp/i.test(msg)) throw err;
+      if (!CONTENT_TYPE_ERROR_RE.test(msg)) throw err;
       logger.warn("Create rejected for vendor content type, retrying with application/*", {
         vendorType,
       });
@@ -514,7 +523,7 @@ export class ObjectService {
       name: attr(root, "adtcore:name") || attr(root, "name"),
       type: attr(root, "adtcore:type") || attr(root, "type"),
       uri: attr(root, "adtcore:uri") || fallbackUri,
-      sourceUri: attr(root, "adtcore:sourceUri"),
+      sourceUri: this.extractSourceUri(root),
       description: attr(root, "adtcore:description") || attr(root, "description"),
       language: attr(root, "adtcore:language") || attr(root, "language"),
       responsible: attr(root, "adtcore:responsible") || "",
@@ -529,6 +538,18 @@ export class ObjectService {
     if (keys.length === 0) return null;
     const root = parsed[keys[0] ?? ""];
     return root && typeof root === "object" ? (root as Record<string, unknown>) : null;
+  }
+
+  /** Classes carry the link on their main include, other objects on the root element. */
+  private extractSourceUri(root: Record<string, unknown>): string {
+    const main = ensureArray(root["class:include"] as unknown).find(
+      (i) => attr(i, "class:includeType") === "main",
+    );
+    return (
+      attr(root, "abapsource:sourceUri") ||
+      (main ? attr(main, "abapsource:sourceUri") : "") ||
+      attr(root, "adtcore:sourceUri")
+    );
   }
 
   private extractPackageName(root: Record<string, unknown>): string {

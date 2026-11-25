@@ -8,13 +8,15 @@ Enables MCP-compatible clients to directly read, write, activate, and analyze SA
 
 ## Features
 
-- **40+ MCP Tools** for the full ABAP development lifecycle
+- **47 MCP tools** for the full ABAP development lifecycle
 - Read and write ABAP source code (classes, interfaces, reports, function groups, CDS)
 - Syntax check, activation, ATC analysis, ABAP Unit Tests
 - Transport request management
 - Package hierarchy navigation
 - Where-used and dependency analysis
 - CDS view analysis and OData service binding management
+- Table data access (ADT data preview, or RFC function modules on older ECC systems)
+- Two transports: HTTPS or [RFC](#rfc-transport) (SAP JCo, no HTTP port needed)
 - Simple Transformation and XSLT support (incl. XML/UBL/ZUGFeRD helpers)
 - Robust session management with CSRF token handling and retry logic
 - Structured logging (Winston), Zod input validation, full TypeScript types
@@ -26,7 +28,9 @@ Enables MCP-compatible clients to directly read, write, activate, and analyze SA
 ### System
 - Node.js 22+
 - SAP ECC 6.07+ or S/4HANA 2020+
-- SAP ADT service enabled (`/sap/bc/adt/discovery` accessible)
+- HTTP transport: SAP ADT service enabled (`/sap/bc/adt/discovery` accessible)
+- RFC transport: JDK 21+ and SAP JCo (see [RFC transport](#rfc-transport))
+- Creating objects may require a developer key (SSCR) on ECC systems
 
 ### SAP Authorizations
 
@@ -38,7 +42,7 @@ The technical user requires at minimum:
 | `S_DEVELOP` | `DEVCLASS` | Target packages |
 | `S_DEVELOP` | `OBJTYPE` | Required object types |
 | `S_CTS_ADMI` | `CTS_ADMFCT` | For transport management |
-| `S_TABU_DIS` | `DICBERCLS` | For DDIC objects |
+| `S_TABU_DIS` | `DICBERCLS` | For DDIC objects and `adt_read_table` |
 
 For ATC execution: `S_ATC_ROLE` or equivalent.
 
@@ -78,25 +82,84 @@ LOG_LEVEL=info
 REQUEST_TIMEOUT=60000
 ```
 
-### RFC transport instead of HTTP (optional)
+If no HTTP port is available, see [RFC transport](#rfc-transport).
 
-If no HTTP port is open to the SAP system but Eclipse ADT reaches it through an RFC destination, set `SAP_TRANSPORT=rfc`. Requests are then sent via the function module `SADT_REST_RFC_ENDPOINT` through a small Java/SAP JCo bridge (`bridge/AdtRfcBridge.java`) started as a subprocess; all tools stay unchanged. Requires a JDK 21+ (the bridge is compiled with `--release 21`) and the SAP JCo jar plus native library (not shipped in this repo). The JVM architecture must match the native library (e.g. an arm64 JVM for `com.sap.conn.jco.macosx.aarch64`); set `SAP_JAVA_BIN` if `java` on the PATH has a different architecture — startup aborts with a clear message on mismatch.
+**Security:** Never commit `.env` to version control.
+
+---
+
+## RFC transport
+
+Optional alternative to HTTP: use it if no HTTP port is open to the SAP system but Eclipse ADT reaches it through an RFC destination. ADT requests are tunnelled through the function module `SADT_REST_RFC_ENDPOINT` by a small Java/SAP JCo bridge (`bridge/AdtRfcBridge.java`) that the server starts as a subprocess. The same tools are used; two additional table tools work only in this mode.
+
+### Prerequisites
+
+- JDK 21+ with `javac` (the bridge is compiled with `--release 21`)
+- SAP JCo jar (`com.sap.conn.jco_*.jar`) and the native library (`libsapjco3.*`). Neither is shipped in this repository; an Eclipse ADT installation provides them in its p2 pool (`~/.p2/pool/plugins/`).
+- JVM architecture matching the native library (e.g. an arm64 JVM for `macosx.aarch64`). Set `SAP_JAVA_BIN` if `java` on the `PATH` differs; startup aborts with a message on mismatch.
+
+### Setup
 
 ```bash
-SAP_JCO_JAR=/path/to/com.sap.conn.jco_3.1.13.jar npm run build:bridge
+# macOS arm64 example: extract the native library
+mkdir -p ~/jco-native
+unzip -j -o ~/.p2/pool/plugins/com.sap.conn.jco.macosx.aarch64_*.jar lib/libsapjco3.dylib -d ~/jco-native
+
+# build server and bridge
+npm run build
+SAP_JCO_JAR=/abs/path/com.sap.conn.jco_3.1.13.jar npm run build:bridge
 ```
 
 ```env
 SAP_TRANSPORT=rfc
-SAP_RFC_ASHOST=127.0.0.1
+SAP_RFC_ASHOST=sap-host.example.com
 SAP_RFC_SYSNR=00
 SAP_JCO_JAR=/abs/path/com.sap.conn.jco_3.1.13.jar
-SAP_JCO_NATIVE_DIR=/abs/path/to/dir-with-libsapjco3
+SAP_JCO_NATIVE_DIR=/abs/path/jco-native
+SAP_CLIENT=100
+SAP_USER=your_user
+SAP_PASSWORD="your_password"
+SAP_LANGUAGE=EN
 ```
 
-`SAP_URL` is ignored in rfc mode. If the launching project already sets `SAP_TRANSPORT=rfc`, the installation's own `.env` is not loaded (no settings of another system leak in). A missing bridge/JCo file aborts startup with an error — there is no silent fallback to HTTP. See `DOCUMENTATION.md` and `docs/architecture.md` for details.
+| Variable | Default | Description |
+|---|---|---|
+| `SAP_TRANSPORT` | `http` | `http` or `rfc` |
+| `SAP_RFC_ASHOST`, `SAP_RFC_SYSNR` | — | Application server and system number (required) |
+| `SAP_RFC_GWHOST`, `SAP_RFC_GWSERV` | — | Optional gateway settings |
+| `SAP_JCO_JAR`, `SAP_JCO_NATIVE_DIR` | — | JCo jar and directory of the native library (required) |
+| `SAP_JAVA_BIN` | `java` | Java executable |
+| `SAP_RFC_BRIDGE_CLASSES` | `dist/bridge` | Directory with the compiled bridge |
 
-**Security:** Never commit `.env` to version control.
+### Behaviour
+
+- `SAP_URL` is ignored. Logon happens via RFC; HTTP authorization and cookie headers are not forwarded.
+- If `SAP_TRANSPORT=rfc` is already set in the environment of the launching project, the installation's own `.env` is **not** loaded, so settings of another system cannot leak in. All required variables must then come from that environment.
+- Missing bridge, JCo jar or native library aborts startup. There is no silent fallback to HTTP.
+
+### Table tools (RFC only)
+
+| Tool | Function module | Notes |
+|---|---|---|
+| `adt_get_table_fields` | `DDIF_FIELDINFO_GET` | Optional `fields` filter; unknown names are returned in `unknownFields` |
+| `adt_read_table` | `RFC_READ_TABLE` | One table, no joins, max. 512 bytes per row (pass `fields` for wide tables), max. 1000 rows per call (`skipRows` for paging), needs `S_TABU_DIS` |
+
+`where` is an Open SQL condition without the keyword `WHERE`. It is split into 72-character lines at whitespace outside literals; a single token longer than 72 characters or an unbalanced quote is rejected. With the HTTP transport both tools return `ADT_RFC_REQUIRED`.
+
+### Older releases (SAP_BASIS 740)
+
+- No ADT data preview (`adt_run_sql_query`) and no `/ddic/tables` endpoint: use the table tools above.
+- No ADT endpoint for Simple Transformations / XSLT: create them in SE80/STRANS or with abapGit.
+- `adt_syntax_check_source` needs an existing object as `contextUri`.
+
+### Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `404` for a table tool | Outdated bridge class: run `npm run build:bridge` and restart the MCP client session |
+| `RFC bridge exited` | Check the JCo paths and Java version; `LOG_LEVEL=debug` shows the bridge output |
+| "SAP_JAVA_BIN ... is a JVM for ..." | Use a JVM with the same architecture as the native library |
+| "Objektkatalogeintrag ... existiert nicht" / "developer license" on create | The user may lack a developer key (SSCR) |
 
 ---
 
@@ -143,33 +206,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ## Claude Code Integration
 
-Add to `~/.claude/settings.json` (or project-level `.claude/settings.json`):
-
-```json
-{
-  "mcpServers": {
-    "sap-adt": {
-      "command": "node",
-      "args": ["/path/to/sap-adt-mcp-server/dist/index.js"],
-      "env": {
-        "SAP_URL": "https://your-sap-host:443",
-        "SAP_CLIENT": "100",
-        "SAP_USER": "your_user",
-        "SAP_PASSWORD": "your_password"
-      }
-    }
-  }
-}
+```bash
+claude mcp add --scope user sap-adt -- node /path/to/sap-adt-mcp-server/dist/index.js
+claude mcp list
 ```
 
-Or use a `.env` file in the server directory and run with:
-```json
-{
-  "command": "node",
-  "args": ["dist/index.js"],
-  "cwd": "/path/to/sap-adt-mcp-server"
-}
-```
+The server reads the `.env` file of its installation directory. To use different systems per project, register it with `--scope local` (or in a project `.mcp.json`) and pass the variables with `-e KEY=value`. `mcpServers` in `settings.json` is not read. After `npm run build`, start a new session.
 
 ---
 
@@ -181,7 +223,7 @@ Or use a `.env` file in the server directory and run with:
 | `adt_search_object` | Search objects by name pattern |
 | `adt_read_object` | Read object source code |
 | `adt_write_object` | Write object source code (inline `source`, or `sourceFilePath` for large sources) |
-| `adt_create_object` | Create generic object |
+| `adt_create_object` | Create generic object (`CLAS/OC`, `INTF/OI`, `PROG/P`, `FUGR/F`, `DDLS/DF`, `BDEF/BDO`) |
 | `adt_delete_object` | Delete object |
 
 ### Activation
@@ -194,14 +236,14 @@ Or use a `.env` file in the server directory and run with:
 | Tool | Description |
 |------|-------------|
 | `adt_syntax_check` | Check existing object |
-| `adt_syntax_check_source` | Check source string |
+| `adt_syntax_check_source` | Check unsaved source against an existing object (`contextUri`) |
 
 ### Locks
 | Tool | Description |
 |------|-------------|
 | `adt_lock_object` | Acquire edit lock |
 | `adt_unlock_object` | Release lock |
-| `adt_get_lock_owner` | Check lock status |
+| `adt_get_lock_owner` | Check lock status (briefly locks unlocked objects in a separate session) |
 
 ### Transport
 | Tool | Description |
@@ -234,6 +276,14 @@ Or use a `.env` file in the server directory and run with:
 | `adt_create_report` | Create report/program |
 | `adt_create_function_group` | Create function group |
 | `adt_create_function_module` | Create function module |
+| `adt_create_test_include` | Create the test class include of an existing class |
+
+### Table Data
+| Tool | Description |
+|------|-------------|
+| `adt_run_sql_query` | Read-only Open SQL `SELECT` via ADT data preview |
+| `adt_get_table_fields` | Field list of a table/structure/view (RFC only) |
+| `adt_read_table` | Rows of a single table (RFC only) |
 
 ### CDS
 | Tool | Description |
@@ -272,6 +322,30 @@ Or use a `.env` file in the server directory and run with:
 
 ---
 
+## Agent Skill
+
+[`docs/skills/abap-tooling/SKILL.md`](docs/skills/abap-tooling/SKILL.md) (German) tells an agent how to use these tools correctly: lock/write/activate order, class includes, reading check results, table access, known limitations and common ABAP activation pitfalls. It is optional; the server works without it.
+
+Install it for all projects (Claude Code), from the repository directory:
+
+```bash
+mkdir -p ~/.claude/skills/abap-tooling
+cp docs/skills/abap-tooling/SKILL.md ~/.claude/skills/abap-tooling/
+```
+
+For a single project, copy it to `.claude/skills/abap-tooling/` inside that project instead. Start a new session afterwards.
+
+Usage notes:
+
+- The skill loads when a task matches its description; you can also call it with `/abap-tooling`.
+- It assumes the server is registered as `sap-adt` (tool prefix `mcp__sap-adt__`). Adjust the text if you use another name.
+- The coding convention section is an example: replace it with your team's rules.
+- It tells the agent to record suspected server bugs in `sap-adt-bugs.md` in the current project.
+- The installed copy does not update itself: copy it again after pulling a new version (this overwrites local changes).
+- With other MCP clients, add the file's content to the agent instructions.
+
+---
+
 ## Usage Examples
 
 ### Reading and modifying a class
@@ -281,14 +355,14 @@ Or use a `.env` file in the server directory and run with:
    adt_search_object { query: "ZCL_MY*", objectType: "CLAS/OC" }
 
 2. Read the source:
-   adt_read_object { objectUri: "/sap/bc/adt/classes/classes/ZCL_MY_CLASS" }
+   adt_read_object { objectUri: "/sap/bc/adt/oo/classes/zcl_my_class" }
 
-3. Acquire lock:
-   adt_lock_object { objectUri: "/sap/bc/adt/classes/classes/ZCL_MY_CLASS" }
+3. Acquire lock (returns lockHandle and, for transportable objects, corrNr):
+   adt_lock_object { objectUri: "/sap/bc/adt/oo/classes/zcl_my_class" }
 
 4. Write changes:
    adt_write_object {
-     objectUri: "/sap/bc/adt/classes/classes/ZCL_MY_CLASS",
+     objectUri: "/sap/bc/adt/oo/classes/zcl_my_class",
      source: "...",
      lockHandle: "...",
      transportNumber: "DEVK900001"
@@ -296,14 +370,14 @@ Or use a `.env` file in the server directory and run with:
    # Large sources: pass sourceFilePath (absolute local path, max 10 MB, no .env)
    # instead of source, so the content is not sent as a tool argument.
 
-5. Syntax check:
+5. Release the lock (before activation):
+   adt_unlock_object { objectUri: "...", lockHandle: "..." }
+
+6. Syntax check:
    adt_syntax_check { objectUri: "..." }
 
-6. Activate:
+7. Activate:
    adt_activate_object { objectUri: "...", objectName: "ZCL_MY_CLASS" }
-
-7. Release lock:
-   adt_unlock_object { objectUri: "...", lockHandle: "..." }
 ```
 
 ### ABAP Unit Test workflow
@@ -336,6 +410,12 @@ Or use a `.env` file in the server directory and run with:
 ### 403 Forbidden (not CSRF)
 - User lacks required authorization for the operation
 - Check `S_DEVELOP` authorizations
+
+### Known limitations
+- `BDEF/BDO`: creating and writing works, activation fails
+- `adt_create_st` / `adt_create_xslt`: creation fails with `ADT_NOT_FOUND` (no verified endpoint)
+- `adt_create_object` does not support database tables
+- `adt_validate_xml_against_xsd` is a stub
 
 ### TLS certificate errors
 - Set `SAP_TLS_VERIFY=false` for development (NOT for production)

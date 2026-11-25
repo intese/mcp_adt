@@ -1,9 +1,9 @@
 import type { AdtHttpClient } from "../adt/client.js";
 import type { AdtLockResult, AdtLockInfo } from "../types/index.js";
-import { parseXml, attr, extractText, getNestedValue } from "../utils/xml.js";
+import { parseXml, extractText, getNestedValue } from "../utils/xml.js";
 import { logger } from "../utils/logger.js";
 import { validateAdtUri } from "../utils/uri.js";
-import { AdtLockError } from "../adt/errors.js";
+import { AdtLockError, lockOwnerFromMessage } from "../adt/errors.js";
 
 // SAP ADT lock mechanism:
 // - Lock:   POST {objectUri}?_action=LOCK&accessMode=MODIFY  (stateful session)
@@ -70,15 +70,31 @@ export class LockService {
     logger.info("Lock released", { uri: lockUri });
   }
 
+  /**
+   * ADT has no lock query: object metadata carries no lock owner. The only reliable answer
+   * is to try to lock the object and read SAP's refusal. The probe runs in its own session,
+   * because releasing (and switching to stateless) on the shared client would drop the
+   * locks this server currently holds.
+   */
   async getLockInfo(objectUri: string): Promise<AdtLockInfo> {
     validateAdtUri(objectUri);
-    const realUri = includeUriForProgram(objectUri);
-
-    const xml = await this.client.get<string>(realUri, {
-      headers: { Accept: "application/vnd.sap.adt.core.objectstructure+xml" },
-    });
-
-    return this.parseLockInfo(xml);
+    const probe = this.client.createStatelessClone();
+    const locks = new LockService(probe);
+    try {
+      let handle: string;
+      try {
+        handle = (await locks.acquireLock(objectUri)).lockHandle;
+      } catch (err) {
+        const owner = err instanceof Error ? lockOwnerFromMessage(err.message) : undefined;
+        if (owner) return { isLocked: true, lockedBy: owner };
+        // Any other refusal says nothing about locks: never report it as "unlocked"
+        throw err;
+      }
+      await locks.releaseLock(objectUri, handle);
+      return { isLocked: false };
+    } finally {
+      await probe.close();
+    }
   }
 
   private parseLockResponse(xml: string, objectUri: string): AdtLockResult {
@@ -105,23 +121,6 @@ export class LockService {
     } catch (err) {
       if (err instanceof AdtLockError) throw err;
       throw new AdtLockError("Failed to parse lock response", { error: String(err) });
-    }
-  }
-
-  private parseLockInfo(xml: string): AdtLockInfo {
-    try {
-      const parsed = parseXml(xml);
-      const keys = Object.keys(parsed).filter((k) => !k.startsWith("?"));
-      const root = (keys[0] ? parsed[keys[0]] : null) as Record<string, unknown> | null;
-      if (!root) return { isLocked: false };
-
-      const lockedBy = attr(root, "adtcore:lockedBy");
-      return {
-        isLocked: !!lockedBy,
-        lockedBy: lockedBy || undefined,
-      };
-    } catch {
-      return { isLocked: false };
     }
   }
 }

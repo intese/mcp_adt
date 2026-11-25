@@ -12,13 +12,27 @@ sap-client: {SAP_CLIENT}
 
 ---
 
+## Transport
+
+Alle Endpunkte gelten für beide Transporte. Mit `SAP_TRANSPORT=rfc` wird derselbe Request (Methode, URI, Header, Body) über den Funktionsbaustein `SADT_REST_RFC_ENDPOINT` getunnelt; `Authorization`- und `Cookie`-Header entfallen. Details: `architecture.md`, Abschnitt „Transport-Schicht".
+
+Ohne ADT-Endpunkt, per Funktionsbaustein (nur RFC):
+
+| Tool | Funktionsbaustein |
+|---|---|
+| `adt_get_table_fields` | `DDIF_FIELDINFO_GET` |
+| `adt_read_table` | `RFC_READ_TABLE` |
+
+---
+
 ## Authentifizierung & Session
 
 | Methode | Pfad | Beschreibung |
 |---------|------|--------------|
-| `GET` | `/sap/bc/adt/discovery` | Workspace-Capabilities, CSRF-Token holen |
-| `POST` | `/sap/bc/adt/login` | Session etablieren (implizit via Basic Auth) |
-| `DELETE` | `/sap/bc/adt/login` | Session beenden |
+| `GET` | `/sap/bc/adt/compatibility/graph` | Anmeldung (Basic Auth) und CSRF-Token holen |
+| `GET` | `/sap/bc/adt/discovery` | Keep-Alive |
+
+Alle Requests senden `User-Agent: ABAP Development Tools`.
 
 ### CSRF-Token
 
@@ -41,11 +55,12 @@ GET {objectUri}
 Accept: */*
 ```
 
-**Verifiziert 2026-09-11 live gegen ein reales SAP-System** (Klasse und Interface): Jeder
-spezifische `vnd.sap.*`-Content-Type — inkl. des zuvor hier dokumentierten
-`application/vnd.sap.adt.core.objectstructure+xml` — wird von SAP mit `406 Not Acceptable`
-(„Zulässige Inhaltstypen:" mit leerer Liste) abgelehnt, für Klassen und Interfaces
-gleichermaßen. Nur `Accept: */*` (bzw. gar kein Accept-Header) liefert `200 OK`.
+Der akzeptierte Typ hängt vom Backend ab (alle Fälle live verifiziert):
+
+- Es gibt Systeme, die jeden `vnd.sap.*`-Typ (auch `core.objectstructure+xml`) mit `406` ablehnen; dort funktioniert `*/*`.
+- SAP_BASIS 740 hat für Klassen keinen Content-Handler zu `*/*` und `application/*`; der Server wiederholt dann mit `application/vnd.sap.adt.oo.classes+xml`.
+
+Die Metadaten enthalten keinen Sperrstatus (siehe „Sperrinhaber ermitteln").
 
 ### Quelltext lesen
 
@@ -56,10 +71,10 @@ Accept: text/plain
 
 Quelltext-URI ist immer `{objectUri}/source/main` oder für Klassen-Includes:
 - `{classUri}/source/main`
-- `{classUri}/source/definitions`
-- `{classUri}/source/implementations`
-- `{classUri}/source/macros`
-- `{classUri}/source/test`
+- `{classUri}/includes/definitions`
+- `{classUri}/includes/implementations`
+- `{classUri}/includes/macros`
+- `{classUri}/includes/testclasses`
 
 ### Quelltext schreiben
 
@@ -272,32 +287,33 @@ x-csrf-token: {token}
 ### Sperre setzen
 
 ```
-POST {objectUri}/lock?_action=LOCK&accessMode=MODIFY
-x-csrf-token: {token}
-Accept: application/vnd.sap.adt.lock+xml
+POST {objectUri}?_action=LOCK&accessMode=MODIFY
+X-sap-adt-sessiontype: stateful
+Accept: application/*,application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result
 
-Response:
-<?xml version="1.0" encoding="UTF-8"?>
-<adtlock:lock xmlns:adtlock="http://www.sap.com/adt/lock">
-  <adtlock:lockHandle>{lockHandle}</adtlock:lockHandle>
-  ...
-</adtlock:lock>
+Response: asx:abap/asx:values/DATA mit LOCK_HANDLE und CORRNR
 ```
+
+Bei Programmen wird die Include-URI (`/programs/includes/{name}`) gesperrt.
 
 ### Sperre lösen
 
 ```
-DELETE {objectUri}/lock/{urlEncoded(lockHandle)}
-x-csrf-token: {token}
+POST {objectUri}?_action=UNLOCK&lockHandle={lockHandle}
+X-sap-adt-sessiontype: stateful      (erst danach auf stateless wechseln)
 ```
 
 ### Sperrinhaber ermitteln
 
-Aus Objektmetadaten:
-```
-GET {objectUri}
-→ adtcore:lockedBy Attribut im Response
-```
+ADT bietet keine Abfrage; die Objektmetadaten enthalten keinen Sperrinhaber. `adt_get_lock_owner`
+versucht deshalb in einer eigenen Session zu sperren:
+
+- Sperre gelingt → sofort wieder lösen, Ergebnis „nicht gesperrt"
+- `403 ExceptionResourceNoAccess` mit „Benutzer {USER} bearbeitet bereits {OBJEKT}" (Meldung EU510) → gesperrt von `{USER}`
+- jeder andere Fehler wird weitergegeben
+
+Erkannt werden die deutsche und die englische Meldung („User {USER} is currently editing {OBJEKT}"), beide live verifiziert.
+Auch `adt_lock_object` meldet diese Ablehnung als `ADT_LOCK_CONFLICT` mit `details.lockedBy`.
 
 ---
 
@@ -355,44 +371,46 @@ Erfolg = keine `inactiveObjects` UND keine Nachrichten vom Typ E/A/X.
 
 ```
 POST /sap/bc/adt/checkruns?reporters=abapCheckRun
-Content-Type: application/vnd.sap.adt.abapsource+xml
-x-csrf-token: {token}
+Content-Type: application/vnd.sap.adt.checkobjects+xml
+Accept: application/vnd.sap.adt.checkmessages+xml
 
-Body:
-<?xml version="1.0" encoding="UTF-8"?>
-<abapCheckRun>
-  <checkObjectList>
-    <checkObject uri="{objectUri}" version="active|inactive"/>
-  </checkObjectList>
-</abapCheckRun>
+<chkrun:checkObjectList xmlns:chkrun="http://www.sap.com/adt/checkrun">
+  <chkrun:checkObject adtcore:uri="{objectUri}" xmlns:adtcore="http://www.sap.com/adt/core"
+    chkrun:version="active|inactive"/>
+</chkrun:checkObjectList>
 ```
 
 ### Syntaxprüfung für freien Quelltext
 
-```
-POST /sap/bc/adt/checkruns?reporters=abapCheckRun
-Content-Type: application/vnd.sap.adt.abapsource.checkrunrequest+xml
-x-csrf-token: {token}
+Gleicher Endpunkt und gleiche Header; das `checkObject` trägt den Quelltext als Artefakt:
 
-Body enthält: Quelltext + Kontext-URI
 ```
+<chkrun:checkObject adtcore:uri="{contextUri}" chkrun:version="inactive">
+  <chkrun:artifacts>
+    <chkrun:artifact chkrun:contentType="text/plain; charset=utf-8"
+      chkrun:uri="{contextUri}/source/main">
+      <chkrun:content>{Quelltext, base64}</chkrun:content>
+    </chkrun:artifact>
+  </chkrun:artifacts>
+</chkrun:checkObject>
+```
+
+Ältere Kernel (SAP_BASIS 740) erwarten exakt `text/plain`; der Server wiederholt dann mit dem anderen Typ.
 
 ### Syntaxprüfungsantwort
 
 ```xml
-<checkRun:checkResultList>
-  <checkRun:checkResult checkRun:reporter="abapCheckRun">
-    <checkRun:findings>
-      <checkRun:finding
-        checkRun:uri="{uri}"
-        checkRun:line="{line}"
-        checkRun:column="{column}"
-        checkRun:type="E|W|I"
-        checkRun:text="{message}"/>
-    </checkRun:findings>
-  </checkRun:checkResult>
-</checkRun:checkResultList>
+<chkrun:checkRunReports>
+  <chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="processed">
+    <chkrun:checkMessageList>
+      <chkrun:checkMessage chkrun:type="E|W|I" chkrun:shortText="{Meldung}"
+        chkrun:uri="{uri}#start={Zeile},{Spalte}"/>
+    </chkrun:checkMessageList>
+  </chkrun:checkReport>
+</chkrun:checkRunReports>
 ```
+
+`status="notProcessed"` bedeutet: nicht geprüft (kein Erfolg).
 
 ---
 
@@ -849,8 +867,8 @@ Accept: text/plain
 
 | Objekttyp | SAP-Typ | URI-Pattern |
 |-----------|---------|-------------|
-| Klasse | `CLAS/OC` | `/sap/bc/adt/classes/classes/{NAME}` |
-| Interface | `INTF/OI` | `/sap/bc/adt/interfaces/interfaces/{NAME}` |
+| Klasse | `CLAS/OC` | `/sap/bc/adt/oo/classes/{NAME}` |
+| Interface | `INTF/OI` | `/sap/bc/adt/oo/interfaces/{NAME}` |
 | Report | `PROG/P` | `/sap/bc/adt/programs/programs/{NAME}` |
 | Include | `PROG/I` | `/sap/bc/adt/programs/includes/{NAME}` |
 | Funktionsgruppe | `FUGR/F` | `/sap/bc/adt/functions/groups/{NAME}` |

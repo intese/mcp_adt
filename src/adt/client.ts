@@ -171,6 +171,13 @@ export class AdtHttpClient {
     return new AdtHttpClient(cloneConfig, this.transport.clone());
   }
 
+  /** End this client's session and release its transport (for short-lived clones). */
+  async close(): Promise<void> {
+    if (this.session.isAuthenticated) await this.logout();
+    this.session.clearSession();
+    await this.transport.close?.();
+  }
+
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   private async executeWithRetry<T>(
