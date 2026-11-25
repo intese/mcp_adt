@@ -74,6 +74,8 @@ import { compareXmlStructuresTool } from "./transformations/compareXml.js";
 import { runSqlQueryTool } from "./table/query.js";
 import { getTableFieldsTool } from "./table/getFields.js";
 import { readTableTool } from "./table/readTable.js";
+import { readTransformationTool } from "./transformations/read.js";
+import { writeTransformationTool } from "./transformations/write.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function asTool(t: ToolDefinition<any>): AnyToolDefinition {
@@ -146,6 +148,8 @@ export const ALL_TOOLS: AnyToolDefinition[] = [
   // Transformations
   asTool(createStTool),
   asTool(createXsltTool),
+  asTool(readTransformationTool),
+  asTool(writeTransformationTool),
   asTool(generateStFromXmlTool),
   asTool(validateXmlTool),
   asTool(analyzeXmlSchemaTool),

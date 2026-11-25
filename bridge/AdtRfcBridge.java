@@ -1,3 +1,4 @@
+import com.sap.conn.jco.AbapException;
 import com.sap.conn.jco.JCo;
 import com.sap.conn.jco.JCoContext;
 import com.sap.conn.jco.JCoDestination;
@@ -99,20 +100,40 @@ public class AdtRfcBridge {
     }
     fn.execute(dest);
     StringBuilder sb = new StringBuilder();
-    for (String o : outs) {
-      JCoTable t = table(fn, o);
-      for (int i = 0; i < t.getNumRows(); i++) {
-        t.setRow(i);
-        sb.append("R\t").append(o);
-        JCoFieldIterator it = t.getFieldIterator();
-        while (it.hasNextField()) {
-          JCoField f = it.nextField();
-          sb.append('\t').append(f.getName()).append('\t').append(b64(f.getString()));
-        }
-        sb.append('\n');
-      }
-    }
+    for (String o : outs) appendResult(sb, fn, o);
     return sb.toString().getBytes(StandardCharsets.UTF_8);
+  }
+
+  /** Appends a table (one line per row), a structure (one line) or a scalar (field VALUE). */
+  static void appendResult(StringBuilder sb, JCoFunction fn, String name) {
+    JCoParameterList[] lists = {
+      fn.getTableParameterList(), fn.getChangingParameterList(), fn.getExportParameterList()
+    };
+    for (JCoParameterList l : lists) {
+      if (l == null || !l.getMetaData().hasField(name)) continue;
+      if (l.getMetaData().isTable(name)) {
+        JCoTable t = l.getTable(name);
+        for (int i = 0; i < t.getNumRows(); i++) {
+          t.setRow(i);
+          appendRow(sb, name, t.getFieldIterator());
+        }
+      } else if (l.getMetaData().isStructure(name)) {
+        appendRow(sb, name, l.getStructure(name).getFieldIterator());
+      } else {
+        sb.append("R\t").append(name).append("\tVALUE\t").append(b64(l.getString(name))).append('\n');
+      }
+      return;
+    }
+    throw new IllegalArgumentException("Output parameter not found: " + name);
+  }
+
+  private static void appendRow(StringBuilder sb, String name, JCoFieldIterator it) {
+    sb.append("R\t").append(name);
+    while (it.hasNextField()) {
+      JCoField f = it.nextField();
+      sb.append('\t').append(f.getName()).append('\t').append(b64(f.getString()));
+    }
+    sb.append('\n');
   }
 
   public static void main(String[] args) throws Exception {
@@ -198,6 +219,16 @@ public class AdtRfcBridge {
         byte[] rb = resp.getByteArray("MESSAGE_BODY");
         out.println(id + "\t" + status + "\t" + b64(reason) + "\t" + b64(rh.toString()) + "\t"
             + ENC.encodeToString(rb == null ? new byte[0] : rb));
+      } catch (AbapException e) {
+        // Exception raised by the function module. The message text is often only a variable,
+        // so class, number and variables are passed on as well.
+        StringBuilder r = new StringBuilder(id).append("\tABAP");
+        for (String s : new String[] {e.getKey(), e.getMessageText(), e.getMessageClass(), e.getMessageNumber()}) {
+          r.append('\t').append(b64(s == null ? "" : s));
+        }
+        String[] vars = e.getMessageParameters();
+        if (vars != null) for (String s : vars) r.append('\t').append(b64(s == null ? "" : s));
+        out.println(r);
       } catch (Throwable t) {
         String m = t.getClass().getSimpleName() + ": " + t.getMessage();
         out.println(id + "\tERR\t" + b64(m));

@@ -17,6 +17,7 @@ export interface ToolServices {
   dependencyService: import("../services/DependencyService.js").DependencyService;
   tableService: import("../services/TableService.js").TableService;
   rfcTableService: import("../services/RfcTableService.js").RfcTableService;
+  rfcTransformationService: import("../services/RfcTransformationService.js").RfcTransformationService;
 }
 
 export interface McpToolResult {

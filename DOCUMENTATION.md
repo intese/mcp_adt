@@ -10,7 +10,7 @@ Ein produktionsreifer MCP-Server (Model Context Protocol), der MCP-kompatiblen C
 2. [Installation](#installation)
 3. [Konfiguration](#konfiguration)
 4. [MCP-Server registrieren](#mcp-server-registrieren)
-5. [Verfügbare Tools (47)](#verfügbare-tools)
+5. [Verfügbare Tools (49)](#verfügbare-tools)
 6. [Typische Workflows](#typische-workflows)
 7. [Fehlerbehandlung](#fehlerbehandlung)
 8. [Bekannte Einschränkungen](#bekannte-einschränkungen)
@@ -117,8 +117,19 @@ SAP_LANGUAGE=DE
 
 - Anlage von Objekten benötigt ggf. einen Entwicklerschlüssel (SSCR); ohne ihn kommen Meldungen wie „Objektkatalogeintrag … existiert nicht".
 - Keine ADT-Datenvorschau (`adt_run_sql_query`) und kein `/ddic/tables`: Tabellen-Tools verwenden.
-- Kein ADT-Endpunkt für Simple Transformations / XSLT: SE80/STRANS oder abapGit.
+- Kein ADT-Endpunkt für Simple Transformations / XSLT: Bearbeitung über RFC, siehe unten.
 - `adt_syntax_check_source` benötigt ein existierendes Objekt als `contextUri`.
+
+#### Transformationen über RFC
+
+`XSLT_MAINTENANCE_RFC` übernimmt Simple Transformations und XSLT-Programme, wenn ADT keinen Endpunkt hat:
+
+- `adt_create_st` / `adt_create_xslt` weichen darauf aus und legen eine **inaktive** Fassung an (aus `source`, sonst ein Gerüst). Vorhandene Objekte werden nicht überschrieben.
+- `adt_read_transformation` liefert Quelle, Paket, Beschreibung und Status (die inaktive Fassung, falls vorhanden).
+- `adt_write_transformation` ersetzt die vollständige Quelle und aktiviert sie (`activate: false` speichert nur). Kein Lock-Handle nötig. Bei Syntaxfehlern bleibt die neue Quelle inaktiv, die aktive Fassung unverändert; SAP liefert nur die Meldungsnummer, nicht die Fehlerzeilen.
+- Quellzeilen sind auf 255 Zeichen begrenzt. Transportierbare Pakete benötigen `transportNumber`.
+- `adt_write_object`, `adt_lock_object` und `adt_activate_object` funktionieren für diese Objekte nicht; ein Lösch-Tool gibt es nicht (SE80/STRANS).
+- Live verifiziert für `$TMP`-Objekte auf SAP_BASIS 740. Nicht verifiziert: Transportaufträge, Sperrkonflikte, Ausführung der erzeugten Transformation.
 
 #### Fehlersuche
 
@@ -265,12 +276,14 @@ Der Server startet als langlebiger stdio-Daemon und wird automatisch mit jeder n
 | `adt_get_table_fields` | Felder einer Tabelle/Struktur/View (nur RFC) |
 | `adt_read_table` | Zeilen einer Tabelle (nur RFC) |
 
-### Transformationen / XML (6 Tools)
+### Transformationen / XML (8 Tools)
 
 | Tool | Beschreibung |
 |---|---|
-| `adt_create_st` | Simple Transformation anlegen (derzeit defekt, siehe Einschränkungen) |
-| `adt_create_xslt` | XSLT anlegen (derzeit defekt, siehe Einschränkungen) |
+| `adt_create_st` | Simple Transformation anlegen (ADT; Rückfall auf RFC) |
+| `adt_create_xslt` | XSLT anlegen (ADT; Rückfall auf RFC) |
+| `adt_read_transformation` | ST/XSLT-Quelle und Attribute lesen (nur RFC) |
+| `adt_write_transformation` | ST/XSLT-Quelle schreiben und aktivieren (nur RFC) |
 | `adt_generate_st_from_xml` | ST aus XML-Muster generieren |
 | `adt_validate_xml_against_xsd` | XML gegen XSD prüfen (Stub) |
 | `adt_analyze_xml_schema` | XML-Schema analysieren |
@@ -404,7 +417,7 @@ SAP ADT verwendet `/sap/bc/adt/oo/classes/{name}` für Klassen (nicht `/sap/bc/a
 ### Nicht unterstützt / defekt
 
 - `BDEF/BDO`: Anlegen und Schreiben funktionieren, die Aktivierung schlägt fehl
-- `adt_create_st` / `adt_create_xslt`: Anlage scheitert mit `ADT_NOT_FOUND`
+- `adt_create_st` / `adt_create_xslt` über HTTP(S): Anlage scheitert mit `ADT_NOT_FOUND` (kein verifizierter ADT-Endpunkt); RFC-Transport verwenden
 - Datenbanktabellen können nicht angelegt werden
 - XML-Validierung gegen XSD ist ein Stub
 

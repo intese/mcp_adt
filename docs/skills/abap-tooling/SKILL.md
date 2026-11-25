@@ -146,8 +146,14 @@ Der Datei-Inhalt ersetzt das ganze Include.
 
 - Behavior Definition (`BDEF/BDO`): Anlegen/Schreiben geht, Aktivierung schlägt
   fehl → in Eclipse aktivieren.
-- `adt_create_st`/`adt_create_xslt` scheitern (`ADT_NOT_FOUND`) → in SE80/STRANS
-  oder Eclipse anlegen.
+- Transformationen (ST/XSLT) ohne ADT-Endpunkt (v. a. ECC): nur mit
+  `SAP_TRANSPORT=rfc` — anlegen mit `adt_create_st`/`adt_create_xslt`, lesen mit
+  `adt_read_transformation`, schreiben und aktivieren mit
+  `adt_write_transformation` (immer die vollständige Quelle, max. 255 Zeichen je
+  Zeile, kein Lock). `adt_write_object`/`adt_activate_object` gehen dafür nicht.
+  Bei `ADT_SYNTAX_ERROR` liefert SAP keine Fehlerzeilen: Quelle prüfen und erneut
+  schreiben; die aktive Fassung bleibt erhalten. Über HTTP(S) scheitert die Anlage →
+  in SE80/STRANS anlegen.
 - Datenbanktabellen und Event Bindings lassen sich nicht anlegen.
 - ECC / SAP_BASIS 740: Meldung „Objektkatalogeintrag … existiert nicht" oder
   „Fehlende Entwicklerlizenz" beim Anlegen → wahrscheinlich fehlt der

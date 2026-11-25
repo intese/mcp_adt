@@ -402,6 +402,8 @@ export interface CDSServiceBinding {
 
 export interface CreateTransformationOptions extends CreateObjectOptions {
   transformationType: "ST" | "XSLT";
+  /** Initial source; only used when the object is created via RFC. */
+  source?: string;
 }
 
 // ─── Dependency Graph ────────────────────────────────────────────────────────

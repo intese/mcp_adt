@@ -15,7 +15,8 @@ export type AdtErrorCode =
   | "ADT_PERMISSION_DENIED"
   | "ADT_SERVER_ERROR"
   | "ADT_NOT_ACCEPTABLE"
-  | "ADT_RFC_REQUIRED";
+  | "ADT_RFC_REQUIRED"
+  | "ADT_ABAP_EXCEPTION";
 
 export class AdtBaseError extends Error {
   readonly errorCode: AdtErrorCode;
