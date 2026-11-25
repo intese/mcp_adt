@@ -143,6 +143,21 @@ describe("RfcTableService.readTable", () => {
     await expect(new RfcTableService(client).readTable({ table: "TADIR", where })).rejects.toThrow(/72/);
   });
 
+  it("rejects an unbalanced quote instead of silently dropping it", async () => {
+    const { client, callFunction } = mockClient({ FIELDS: fields, DATA: [] });
+    const where = "NAME = 'x AND OBJECT = 'DEVC'";
+    await expect(new RfcTableService(client).readTable({ table: "TADIR", where })).rejects.toThrow(/quote/);
+    expect(callFunction).not.toHaveBeenCalled();
+  });
+
+  it("keeps escaped quotes inside a literal", async () => {
+    const { client, callFunction } = mockClient({ FIELDS: fields, DATA: [] });
+    const where = "NAME = 'O''Brien and sons'";
+    await new RfcTableService(client).readTable({ table: "TADIR", where });
+    const call = (callFunction.mock.calls[0] as unknown[])[0] as { tables: Record<string, Record<string, string>[]> };
+    expect(call.tables.OPTIONS).toEqual([{ TEXT: where }]);
+  });
+
   it("does not flag truncation when fewer rows than maxRows come back", async () => {
     const { client } = mockClient({ FIELDS: fields, DATA: [{ WA: "0090000001" + "20240105" }] });
     const res = await new RfcTableService(client).readTable({ table: "VBRK", maxRows: 10 });
