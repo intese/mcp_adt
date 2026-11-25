@@ -16,6 +16,7 @@ Ein produktionsreifer MCP-Server (Model Context Protocol), der MCP-kompatiblen C
 8. [Bekannte Einschränkungen](#bekannte-einschränkungen)
 9. [Entwicklung & Tests](#entwicklung--tests)
 10. [Sicherheitshinweise](#sicherheitshinweise)
+11. [Skill für Agenten](#skill-für-agenten)
 
 ---
 
@@ -469,3 +470,30 @@ docs/
 - **TLS:** Standardmäßig aktiv (`SAP_TLS_VERIFY=true`). Nur für Entwicklungsumgebungen mit selbstsignierten Zertifikaten deaktivieren — nie in Produktion.
 - **Berechtigungen:** Der SAP-Benutzer sollte nur die minimal notwendigen Berechtigungen haben (`S_ADT_RES`, `S_DEVELOP` mit eingeschränkten Objekttypen).
 - **CSRF-Schutz:** Alle schreibenden Requests (POST, PUT, DELETE) verwenden automatisch einen CSRF-Token. Bei Token-Ablauf wird automatisch neu eingeloggt.
+
+---
+
+## Skill für Agenten
+
+[`docs/skills/abap-tooling/SKILL.md`](docs/skills/abap-tooling/SKILL.md) beschreibt für einen Agenten die richtige Nutzung der Tools: Reihenfolge Sperren/Schreiben/Aktivieren, Klassen-Includes, Bewertung von Prüfergebnissen, Tabellenzugriff, bekannte Grenzen und typische ABAP-Aktivierungsfallen. Der Skill ist optional; der Server funktioniert auch ohne ihn.
+
+### Installation (Claude Code)
+
+Für alle Projekte, ausgeführt im Repository-Verzeichnis:
+
+```bash
+mkdir -p ~/.claude/skills/abap-tooling
+cp docs/skills/abap-tooling/SKILL.md ~/.claude/skills/abap-tooling/
+```
+
+Für ein einzelnes Projekt stattdessen nach `.claude/skills/abap-tooling/` in diesem Projekt kopieren. Danach eine neue Session starten.
+
+### Hinweise zur Nutzung
+
+- Der Skill wird geladen, wenn eine Aufgabe zu seiner Beschreibung passt; er lässt sich auch mit `/abap-tooling` aufrufen.
+- Er setzt voraus, dass der Server als `sap-adt` registriert ist (Tool-Präfix `mcp__sap-adt__`). Bei anderem Namen den Text anpassen.
+- Der Abschnitt zur Coding-Konvention ist ein Beispiel und sollte durch die eigenen Team-Regeln ersetzt werden.
+- Der Skill weist den Agenten an, vermutete Server-Fehler in `sap-adt-bugs.md` im aktuellen Projekt festzuhalten.
+- Die installierte Kopie aktualisiert sich nicht selbst: nach einem Update erneut kopieren (lokale Anpassungen werden dabei überschrieben).
+- Bei anderen MCP-Clients den Inhalt in die Agenten-Anweisungen übernehmen.
+

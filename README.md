@@ -322,6 +322,30 @@ The server reads the `.env` file of its installation directory. To use different
 
 ---
 
+## Agent Skill
+
+[`docs/skills/abap-tooling/SKILL.md`](docs/skills/abap-tooling/SKILL.md) (German) tells an agent how to use these tools correctly: lock/write/activate order, class includes, reading check results, table access, known limitations and common ABAP activation pitfalls. It is optional; the server works without it.
+
+Install it for all projects (Claude Code), from the repository directory:
+
+```bash
+mkdir -p ~/.claude/skills/abap-tooling
+cp docs/skills/abap-tooling/SKILL.md ~/.claude/skills/abap-tooling/
+```
+
+For a single project, copy it to `.claude/skills/abap-tooling/` inside that project instead. Start a new session afterwards.
+
+Usage notes:
+
+- The skill loads when a task matches its description; you can also call it with `/abap-tooling`.
+- It assumes the server is registered as `sap-adt` (tool prefix `mcp__sap-adt__`). Adjust the text if you use another name.
+- The coding convention section is an example: replace it with your team's rules.
+- It tells the agent to record suspected server bugs in `sap-adt-bugs.md` in the current project.
+- The installed copy does not update itself: copy it again after pulling a new version (this overwrites local changes).
+- With other MCP clients, add the file's content to the agent instructions.
+
+---
+
 ## Usage Examples
 
 ### Reading and modifying a class
