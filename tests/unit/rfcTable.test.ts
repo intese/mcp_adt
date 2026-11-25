@@ -121,7 +121,26 @@ describe("RfcTableService.readTable", () => {
     expect(call.tables.FIELDS).toEqual([{ FIELDNAME: "VBELN" }, { FIELDNAME: "FKDAT" }]);
     const opts = call.tables.OPTIONS!.map((o) => o.TEXT!);
     expect(opts.every((t) => t.length <= 72)).toBe(true);
-    expect(opts.join("")).toBe(where);
+    // Lines of a dynamic WHERE are separate parts: no word may be cut across a line boundary.
+    expect(opts.join(" ")).toBe(where);
+  });
+
+  it("never splits a keyword or a quoted literal across option lines", async () => {
+    const { client, callFunction } = mockClient({ FIELDS: fields, DATA: [] });
+    const where =
+      "PGMID = 'R3TR' AND OBJECT = 'DEVC' AND DEVCLASS LIKE 'Z%' AND OBJ_NAME LIKE 'Z0 A%' AND SRCSYSTEM <> 'NOPE'";
+    await new RfcTableService(client).readTable({ table: "TADIR", where });
+    const call = (callFunction.mock.calls[0] as unknown[])[0] as { tables: Record<string, Record<string, string>[]> };
+    const opts = call.tables.OPTIONS!.map((o) => o.TEXT!);
+    expect(opts.length).toBeGreaterThan(1);
+    expect(opts.every((t) => t.length <= 72 && t === t.trim())).toBe(true);
+    expect(opts.join(" ")).toBe(where);
+  });
+
+  it("rejects a single WHERE token that cannot fit into one 72-char line", async () => {
+    const { client } = mockClient({ FIELDS: fields, DATA: [] });
+    const where = "NAME = '" + "A".repeat(80) + "'";
+    await expect(new RfcTableService(client).readTable({ table: "TADIR", where })).rejects.toThrow(/72/);
   });
 
   it("does not flag truncation when fewer rows than maxRows come back", async () => {

@@ -18,7 +18,9 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -62,6 +64,15 @@ public class AdtRfcBridge {
     throw new IllegalArgumentException("Table parameter not found: " + name);
   }
 
+  private static JCoTable handle(JCoFunction fn, Map<String, JCoTable> handles, String name) {
+    JCoTable t = handles.get(name);
+    if (t == null) {
+      t = table(fn, name);
+      handles.put(name, t);
+    }
+    return t;
+  }
+
   /**
    * Generic function-module call. Spec lines (tab-separated, values base64):
    * P name val | A table | F table field val | O table. Result: R table (field val)*
@@ -70,13 +81,18 @@ public class AdtRfcBridge {
     JCoFunction fn = dest.getRepository().getFunction(name);
     if (fn == null) throw new IllegalStateException(name + " not found");
     List<String> outs = new ArrayList<>();
+    // JCoParameterList.getTable() returns a fresh table handle on every call, each with its
+    // own row cursor (row 0). Reuse one handle per table so "A" (appendRow) and the following
+    // "F" lines address the same, newly appended row; otherwise every field of a multi-row
+    // table lands in row 0 and the later rows stay empty (RFC_READ_TABLE: FIELD_NOT_VALID).
+    Map<String, JCoTable> handles = new HashMap<>();
     for (String line : spec.split("\n")) {
       if (line.isEmpty()) continue;
       String[] p = line.split("\t", -1);
       switch (p[0]) {
         case "P": fn.getImportParameterList().setValue(p[1], str(p[2])); break;
-        case "A": table(fn, p[1]).appendRow(); break;
-        case "F": table(fn, p[1]).setValue(p[2], str(p[3])); break;
+        case "A": handle(fn, handles, p[1]).appendRow(); break;
+        case "F": handle(fn, handles, p[1]).setValue(p[2], str(p[3])); break;
         case "O": outs.add(p[1]); break;
         default: throw new IllegalArgumentException("Bad spec line: " + p[0]);
       }

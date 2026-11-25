@@ -8,6 +8,30 @@ import type {
 const NAME_RE = /^[A-Za-z0-9_\/]{1,30}$/;
 const OPTION_LINE = 72;
 
+/**
+ * Splits a WHERE clause into RFC_READ_TABLE OPTIONS lines (CHAR72). The lines of a dynamic
+ * WHERE are separate parts, so a keyword or literal must never be cut across two lines
+ * (cutting "LIKE" into "L"+"IKE" gives "Fehler beim Parsen einer dynamischen Angabe").
+ * Break only at whitespace outside quoted literals; a single token longer than a line is an error.
+ */
+function splitWhere(where: string): string[] {
+  const tokens = where.match(/(?:'(?:[^']|'')*'|[^\s'])+/g) ?? [];
+  const lines: string[] = [];
+  let cur = "";
+  for (const t of tokens) {
+    if (t.length > OPTION_LINE) {
+      throw new Error(`WHERE contains a token longer than ${OPTION_LINE} characters: "${t.slice(0, 20)}..."`);
+    }
+    if (cur && cur.length + 1 + t.length <= OPTION_LINE) cur += " " + t;
+    else {
+      if (cur) lines.push(cur);
+      cur = t;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
 function checkName(kind: "table" | "field", v: string): string {
   if (!NAME_RE.test(v)) throw new Error(`Invalid ${kind} name: "${v}"`);
   return v.toUpperCase();
@@ -55,10 +79,7 @@ export class RfcTableService {
     const maxRows = options.maxRows ?? 100;
 
     const where = options.where?.trim() ?? "";
-    const optionRows: Record<string, string>[] = [];
-    for (let i = 0; i < where.length; i += OPTION_LINE) {
-      optionRows.push({ TEXT: where.slice(i, i + OPTION_LINE) });
-    }
+    const optionRows = splitWhere(where).map((TEXT) => ({ TEXT }));
 
     const res = await this.client.callFunction({
       name: "RFC_READ_TABLE",
