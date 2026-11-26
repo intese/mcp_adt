@@ -339,6 +339,12 @@ Body:
 
 Gleiches Endpoint, mehrere `objectReference`-Elemente im Body.
 
+Die Referenzen dürfen sich nicht überschneiden (live verifiziert, SAP_BASIS 740): Dasselbe Objekt
+zweimal oder eine Klasse zusammen mit einem ihrer Includes ergibt `403` EU510 „Benutzer {eigener User}
+bearbeitet bereits {OBJEKT}", obwohl keine Sperre besteht. Mehrere verschiedene Includes ohne die
+Klassen-URI sind zulässig. `ActivationService` entfernt Dubletten und, wenn die Klassen-URI
+enthalten ist, deren Include-URIs.
+
 ### Inaktive Objekte auflisten
 
 ```
