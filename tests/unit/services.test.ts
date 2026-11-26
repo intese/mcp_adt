@@ -106,6 +106,42 @@ describe("ActivationService", () => {
     expect(calls[1]?.[2]).not.toHaveProperty("timeout");
   });
 
+  // Live-verified on SAP_BASIS 740: referencing an object twice in one request (or a
+  // class together with one of its includes) is refused with EU510 on the user's own name.
+  async function postedUris(uris: string[]): Promise<string[]> {
+    const client = createMockClient({ activation: MOCK_ACTIVATION_SUCCESS_XML });
+    const mockPost = (client as unknown as { post: ReturnType<typeof jest.fn> }).post;
+    await new ActivationService(client).activateObjects(
+      uris.map((uri) => ({ uri, name: "ZCL_TEST" })),
+    );
+    const body = (mockPost.mock.calls as [string, string][])[0]![1];
+    return [...body.matchAll(/adtcore:uri="([^"]+)"/g)].map((m) => m[1]!);
+  }
+
+  const CLASS_URI = "/sap/bc/adt/oo/classes/zcl_test";
+
+  it("sends an object referenced twice only once", async () => {
+    expect(await postedUris([CLASS_URI, "/sap/bc/adt/oo/classes/ZCL_TEST"])).toEqual([CLASS_URI]);
+  });
+
+  it("drops class includes when the class itself is also referenced", async () => {
+    const uris = [
+      `${CLASS_URI}/includes/definitions`,
+      `${CLASS_URI}/includes/testclasses`,
+      CLASS_URI,
+      "/sap/bc/adt/oo/classes/zcl_test_other/includes/definitions",
+    ];
+    expect(await postedUris(uris)).toEqual([
+      CLASS_URI,
+      "/sap/bc/adt/oo/classes/zcl_test_other/includes/definitions",
+    ]);
+  });
+
+  it("keeps different includes of a class that is not referenced itself", async () => {
+    const uris = [`${CLASS_URI}/includes/definitions`, `${CLASS_URI}/includes/implementations`];
+    expect(await postedUris(uris)).toEqual(uris);
+  });
+
   it("returns success for clean activation response", async () => {
     const client = createMockClient({ activation: MOCK_ACTIVATION_SUCCESS_XML });
     const service = new ActivationService(client);

@@ -103,14 +103,13 @@ Der Datei-Inhalt ersetzt das ganze Include.
 
 ## Aktivieren als EINE Einheit
 
-- Klasse mit geänderten Sub-Includes: alle betroffenen Sub-Include-URIs **plus** die
-  Klasse in EINEM `adt_activate_mass`-Aufruf angeben, sonst wird `main` gegen die
-  **alten aktiven** Versionen der anderen Includes kompiliert (führt zu „Typ
-  unbekannt"). URIs:
-  - `/sap/bc/adt/oo/classes/<name>/includes/definitions`
-  - `/sap/bc/adt/oo/classes/<name>/includes/implementations`
-  - `/sap/bc/adt/oo/classes/<name>/includes/testclasses`
-  - `/sap/bc/adt/oo/classes/<name>` (main)
+- Klasse mit geänderten Sub-Includes: nur die Klassen-URI
+  `/sap/bc/adt/oo/classes/<name>` aktivieren; sie aktiviert alle Includes mit.
+  Einzelne Includes zu aktivieren lässt `main` gegen die **alten aktiven** Versionen
+  der übrigen Includes kompilieren (führt zu „Typ unbekannt").
+- Klassen-URI und Include-URIs derselben Klasse nicht zusammen übergeben: SAP lehnt
+  das mit „Benutzer … bearbeitet bereits …" (eigener User) ab. Der Server entfernt
+  die Include-URIs in diesem Fall selbst; ältere Stände tun das nicht.
 - Bei `400 Session Timed Out` einfach denselben Aufruf erneut absetzen (transient).
 - Aktivierungsmeldungen enthalten den SAP-Text. Steht dort `[SAP sent no message
   text; raw node: …]` (oder ein leerer Text), das als Tool-Bug melden. Zur Diagnose:

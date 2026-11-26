@@ -26,9 +26,14 @@ export class ActivationService {
     preaudit = true,
     timeoutMs?: number,
   ): Promise<ActivationResult> {
-    logger.debug("Activating objects", { count: objects.length, preaudit });
+    const references = this.removeOverlappingReferences(objects);
+    logger.debug("Activating objects", {
+      count: references.length,
+      dropped: objects.length - references.length,
+      preaudit,
+    });
 
-    const body = this.buildActivationRequest(objects);
+    const body = this.buildActivationRequest(references);
     const xml = await this.client.post<string>(
       `/sap/bc/adt/activation?method=activate&preauditRequested=${preaudit}`,
       body,
@@ -61,6 +66,24 @@ export class ActivationService {
       headers: { Accept: "application/vnd.sap.adt.activation.objectregistries+xml" },
     });
     return this.parseInactiveObjects(xml);
+  }
+
+  /**
+   * Live-verified (SAP_BASIS 740): the activator locks every reference, so naming an object
+   * twice, or a class together with one of its includes, makes it collide with its own lock
+   * (EU510 "user is already editing", with the caller's own user). The class URI covers its
+   * includes; different includes without the class URI activate fine.
+   */
+  private removeOverlappingReferences(objects: AdtObjectReference[]): AdtObjectReference[] {
+    const uris = new Set(objects.map((o) => o.uri.toLowerCase()));
+    const seen = new Set<string>();
+    return objects.filter((o) => {
+      const uri = o.uri.toLowerCase();
+      const classUri = /^(.*\/oo\/classes\/[^/]+)\/includes\//.exec(uri)?.[1];
+      if (seen.has(uri) || (classUri && uris.has(classUri))) return false;
+      seen.add(uri);
+      return true;
+    });
   }
 
   private buildActivationRequest(objects: AdtObjectReference[]): string {
